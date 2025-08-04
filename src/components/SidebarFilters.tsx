@@ -4,10 +4,8 @@ import { Filter, ChevronDown, ChevronUp } from 'lucide-react';
 
 const SidebarFilters: React.FC = () => {
   const { apps, filters, setFilters } = useData();
-  const [isExpanded, setIsExpanded] = useState(true); // Changed default to true for immediate visibility
+  const [isExpanded, setIsExpanded] = useState(true);
 
-  // Get unique values for filter options
-  // Added basic check for apps to prevent errors if apps is not yet loaded
   const categories = apps ? [...new Set(apps.map(app => app.Category))].sort() : [];
   const contentRatings = apps ? [...new Set(apps.map(app => app['Content Rating']))].sort() : [];
 
@@ -56,35 +54,40 @@ const SidebarFilters: React.FC = () => {
   };
 
   return (
-    // Added padding-y and a light background to the container for better visual separation
-    <div className="py-4 px-4 bg-gray-50 border-t border-gray-100">
+    // !!! IMPORTANT CHANGE HERE !!!
+    // Added max-h-[calc(100vh-Ypx)] and overflow-y-auto to the main container
+    // 'Ypx' should be the combined height of your header/navbar (if any) and any top/bottom padding/margins
+    // that exist outside this sidebar component. For example, if you have a 64px header, use 'calc(100vh-64px)'.
+    // I'm using 64px as a common header height placeholder. Adjust this value for your specific layout.
+    <div className="py-4 px-4 bg-gray-50 border-t border-gray-100
+                    max-h-[calc(100vh-64px)] overflow-y-auto custom-scrollbar">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <Filter className="w-4 h-4 text-gray-500" />
-          <h3 className="text-sm font-semibold text-gray-800">Filters</h3> {/* Darker text */}
+          <h3 className="text-sm font-semibold text-gray-800">Filters</h3>
         </div>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="p-1 rounded-full hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500" // More prominent hover and focus styles
-          aria-expanded={isExpanded} // Accessibility
-          aria-label={isExpanded ? "Collapse filters" : "Expand filters"} // Accessibility
+          className="p-1 rounded-full hover:bg-gray-200 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+          aria-expanded={isExpanded}
+          aria-label={isExpanded ? "Collapse filters" : "Expand filters"}
         >
           {isExpanded ? (
-            <ChevronUp className="w-4 h-4 text-gray-600" /> // Darker icon color
+            <ChevronUp className="w-4 h-4 text-gray-600" />
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-600" /> // Darker icon color
+            <ChevronDown className="w-4 h-4 text-gray-600" />
           )}
         </button>
       </div>
 
       {isExpanded && (
-        <div className="space-y-4 text-sm"> {/* Increased general spacing and font size */}
+        <div className="space-y-4 text-sm">
           {/* Rating Range */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-2">
               Rating Range: <span className="font-semibold">{filters.ratingRange[0].toFixed(1)}</span> - <span className="font-semibold">{filters.ratingRange[1].toFixed(1)}</span>
             </label>
-            <div className="flex space-x-2 items-center"> {/* Added items-center for better vertical alignment */}
+            <div className="flex space-x-2 items-center">
               <input
                 type="range"
                 min="1"
@@ -95,7 +98,7 @@ const SidebarFilters: React.FC = () => {
                   ...filters,
                   ratingRange: [parseFloat(e.target.value), filters.ratingRange[1]]
                 })}
-                className="flex-1 h-1 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-600" // Tailwind range input styles
+                className="flex-1 h-1 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-600"
               />
               <input
                 type="range"
@@ -107,7 +110,7 @@ const SidebarFilters: React.FC = () => {
                   ...filters,
                   ratingRange: [filters.ratingRange[0], parseFloat(e.target.value)]
                 })}
-                className="flex-1 h-1 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-600" // Tailwind range input styles
+                className="flex-1 h-1 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-600"
               />
             </div>
           </div>
@@ -117,14 +120,14 @@ const SidebarFilters: React.FC = () => {
             <label className="block text-xs font-medium text-gray-700 mb-2">App Type</label>
             <div className="space-y-1">
               {['Free', 'Paid'].map(type => (
-                <label key={type} className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors"> {/* Added hover style */}
+                <label key={type} className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors">
                   <input
                     type="checkbox"
                     checked={filters.appType.includes(type)}
                     onChange={() => handleAppTypeChange(type)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" // Slightly larger, better focus ring
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
-                  <span className="ml-2 text-sm text-gray-700">{type}</span> {/* Darker text, slightly larger */}
+                  <span className="ml-2 text-sm text-gray-700">{type}</span>
                 </label>
               ))}
             </div>
@@ -135,14 +138,14 @@ const SidebarFilters: React.FC = () => {
             <label className="block text-xs font-medium text-gray-700 mb-2">Sentiment</label>
             <div className="space-y-1">
               {['Positive', 'Neutral', 'Negative'].map(sentiment => (
-                <label key={sentiment} className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors"> {/* Added hover style */}
+                <label key={sentiment} className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors">
                   <input
                     type="checkbox"
                     checked={filters.sentiment.includes(sentiment)}
                     onChange={() => handleSentimentChange(sentiment)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" // Slightly larger, better focus ring
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
-                  <span className="ml-2 text-sm text-gray-700">{sentiment}</span> {/* Darker text, slightly larger */}
+                  <span className="ml-2 text-sm text-gray-700">{sentiment}</span>
                 </label>
               ))}
             </div>
@@ -150,14 +153,14 @@ const SidebarFilters: React.FC = () => {
 
           {/* Recently Updated */}
           <div>
-            <label className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors"> {/* Added hover style */}
+            <label className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors">
               <input
                 type="checkbox"
                 checked={filters.recentlyUpdated}
                 onChange={(e) => setFilters({ ...filters, recentlyUpdated: e.target.checked })}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" // Slightly larger, better focus ring
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
               />
-              <span className="ml-2 text-sm text-gray-700">Recently Updated (6 months)</span> {/* Darker text, slightly larger */}
+              <span className="ml-2 text-sm text-gray-700">Recently Updated (6 months)</span>
             </label>
           </div>
 
@@ -166,27 +169,27 @@ const SidebarFilters: React.FC = () => {
             <label className="block text-xs font-medium text-gray-700 mb-2">
               Categories ({filters.categories.length} selected)
             </label>
-            <div className="max-h-40 overflow-y-auto space-y-1 pr-2 custom-scrollbar"> {/* Increased max-height, added custom-scrollbar, pr-2 for scrollbar space */}
-              {categories.map(category => ( // Iterate over all categories, not just slice
-                <label key={category} className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors"> {/* Added hover style */}
+            <div className="max-h-40 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
+              {categories.map(category => (
+                <label key={category} className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors">
                   <input
                     type="checkbox"
                     checked={filters.categories.includes(category)}
                     onChange={() => handleCategoryChange(category)}
-                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500" // Slightly larger, better focus ring
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
-                  <span className="ml-2 text-sm text-gray-700 truncate">{category}</span> {/* Darker text, slightly larger */}
+                  <span className="ml-2 text-sm text-gray-700 truncate">{category}</span>
                 </label>
               ))}
             </div>
           </div>
 
-          {/* Content Ratings (Scrollable) - Added this section */}
+          {/* Content Ratings (Scrollable) */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-2">
               Content Rating ({filters.contentRating.length} selected)
             </label>
-            <div className="max-h-28 overflow-y-auto space-y-1 pr-2 custom-scrollbar"> {/* Added new section with scroll */}
+            <div className="max-h-28 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
               {contentRatings.map(rating => (
                 <label key={rating} className="flex items-center cursor-pointer hover:bg-gray-100 p-1 rounded transition-colors">
                   <input
@@ -205,7 +208,7 @@ const SidebarFilters: React.FC = () => {
           <button
             onClick={clearAllFilters}
             className="w-full px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-lg
-                       hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500" // Slightly larger padding, darker text
+                        hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
           >
             Clear All Filters
           </button>
