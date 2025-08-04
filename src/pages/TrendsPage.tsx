@@ -18,6 +18,7 @@ interface AppData {
   Installs: string | null;
   Reviews: string;
   InstallsNumeric: number;
+  ReviewsNumeric: number; // Ensure this is present
   EngagementRate: number;
   Price: string;
   Size: string;
@@ -36,16 +37,21 @@ interface Category {
 const TrendsPage: React.FC = () => {
   const { filteredApps, loading, fetchApps } = useData();
 
-  // --- START: State for new features ---
-  const [selectedCategory, setSelectedCategory] = useState<string>('ART_AND_DESIGN'); // Default category
-  const [sortBy, setSortBy] = useState<string>('InstallsNumeric');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  // --- END: State for new features ---
+  // --- START: State for table controls ---
+  // State for "Top Apps in Category" table
+  const [selectedCategory, setSelectedCategory] = useState<string>('ART_AND_DESIGN');
+  const [sortByCategoryApps, setSortByCategoryApps] = useState<string>('InstallsNumeric');
+  const [sortOrderCategoryApps, setSortOrderCategoryApps] = useState<'asc' | 'desc'>('desc');
 
-  // Mock categories (replace with actual data if you have it from context or a separate API)
+  // State for "High-Rated Apps Not Updated Recently" table
+  const [sortByStaleApps, setSortByStaleApps] = useState<string>('Rating');
+  const [sortOrderStaleApps, setSortOrderStaleApps] = useState<'desc' | 'asc'>('desc');
+  // --- END: State for table controls ---
+
+  // Mock categories
   const categories: Category[] = useMemo(() => {
     const uniqueCategories = [...new Set(filteredApps.map(app => app.Category))];
-    return [{ code: 'ALL', name: 'All Categories' }, ...uniqueCategories.map(cat => ({ code: cat, name: cat })).sort((a,b) => a.name.localeCompare(b.name))];
+    return [{ code: 'ALL', name: 'All Categories' }, ...uniqueCategories.map(cat => ({ code: cat, name: cat })).sort((a, b) => a.name.localeCompare(b.name))];
   }, [filteredApps]);
 
 
@@ -56,10 +62,11 @@ const TrendsPage: React.FC = () => {
       const reviewsNumeric = parseInt(app.Reviews || '0');
       const engagementRate = installsNumeric > 0 ? (reviewsNumeric / installsNumeric) * 100 : 0;
 
-      const appAny = app as any; // Temporary cast to access properties that might not be strictly typed yet
+      const appAny = app as any;
       return {
         ...app,
         InstallsNumeric: installsNumeric,
+        ReviewsNumeric: reviewsNumeric, // Ensure this numeric version is available
         EngagementRate: engagementRate,
         Price: appAny.Price || '0',
         Size: appAny.Size || 'Varies with device',
@@ -69,32 +76,66 @@ const TrendsPage: React.FC = () => {
     });
   }, [filteredApps]);
 
-  // Data for "Top Trending Apps Table"
+  // --- START: Data for "Top Apps in Category" ---
   const appsForCategory = useMemo(() => {
     return selectedCategory === 'ALL' ? appsWithProcessedData : appsWithProcessedData.filter(app => app.Category === selectedCategory);
   }, [appsWithProcessedData, selectedCategory]);
 
-  const sortedApps = useMemo(() => {
+  // Sort ALL apps in category based on external controls, DataTable will handle pagination
+  const sortedCategoryApps = useMemo(() => {
     return [...appsForCategory].sort((a, b) => {
-      let valA: any = a[sortBy as keyof AppData];
-      let valB: any = b[sortBy as keyof AppData];
+      let valA: any = a[sortByCategoryApps as keyof AppData];
+      let valB: any = b[sortByCategoryApps as keyof AppData];
 
       if (typeof valA === 'string' && !isNaN(parseFloat(valA))) {
         valA = parseFloat(valA);
         valB = parseFloat(valB);
       }
+      if (valA === null || typeof valA === 'undefined') valA = (sortOrderCategoryApps === 'asc' ? -Infinity : Infinity);
+      if (valB === null || typeof valB === 'undefined') valB = (sortOrderCategoryApps === 'asc' ? -Infinity : Infinity);
 
-      if (valA === null || typeof valA === 'undefined') valA = (sortOrder === 'asc' ? -Infinity : Infinity);
-      if (valB === null || typeof valB === 'undefined') valB = (sortOrder === 'asc' ? -Infinity : Infinity);
-
-
-      if (sortOrder === 'asc') {
+      if (sortOrderCategoryApps === 'asc') {
         return valA - valB;
       } else {
         return valB - valA;
       }
     });
-  }, [appsForCategory, sortBy, sortOrder]);
+  }, [appsForCategory, sortByCategoryApps, sortOrderCategoryApps]);
+  // --- END: Data for "Top Apps in Category" ---
+
+
+  // --- START: Data for "High-Rated Apps Not Updated Recently" ---
+  const rawStaleApps = useMemo(() => {
+    return appsWithProcessedData.filter((app: AppData) => {
+      const date = new Date(app['Last Updated']);
+      const twoYearsAgo = new Date();
+      twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+      return !isNaN(date.getTime()) && date < twoYearsAgo && (app.Rating || 0) >= 4.0;
+    });
+  }, [appsWithProcessedData]);
+
+  // Sort ALL stale apps based on external controls, DataTable will handle pagination
+  const sortedStaleApps = useMemo(() => {
+    return [...rawStaleApps].sort((a, b) => {
+      let valA: any = a[sortByStaleApps as keyof AppData];
+      let valB: any = b[sortByStaleApps as keyof AppData];
+
+      if (sortByStaleApps === 'Last Updated') {
+        valA = new Date(valA).getTime();
+        valB = new Date(valB).getTime();
+      }
+
+      if (valA === null || typeof valA === 'undefined') valA = (sortOrderStaleApps === 'asc' ? -Infinity : Infinity);
+      if (valB === null || typeof valB === 'undefined') valB = (sortOrderStaleApps === 'asc' ? -Infinity : Infinity);
+
+      if (sortOrderStaleApps === 'asc') {
+        return valA - valB;
+      } else {
+        return valB - valA;
+      }
+    });
+  }, [rawStaleApps, sortByStaleApps, sortOrderStaleApps]);
+  // --- END: Data for "High-Rated Apps Not Updated Recently" ---
 
 
   // --- START: Original TrendsPage calculations (kept the same logic) ---
@@ -114,8 +155,8 @@ const TrendsPage: React.FC = () => {
     .sort((a, b) => parseInt(a.name) - parseInt(b.name));
 
   const recentApps = appsWithDates.filter(app => {
-    const year = new Date(app['Last Updated']).getFullYear();
-    return year >= 2017;
+    const date = new Date(app['Last Updated']);
+    return date.getFullYear() >= 2017;
   });
 
   const updatesByMonth = recentApps.reduce((acc, app) => {
@@ -128,7 +169,7 @@ const TrendsPage: React.FC = () => {
   const monthlyUpdates = Object.entries(updatesByMonth)
     .map(([month, count]) => ({ name: month, value: count }))
     .sort((a, b) => a.name.localeCompare(b.name))
-    .slice(-24);
+    .slice(-24); // Show last 24 months
 
   const ratingTrends = yearlyUpdates.map(yearData => {
     const yearApps = appsWithDates.filter(app =>
@@ -142,21 +183,6 @@ const TrendsPage: React.FC = () => {
       appCount: yearData.value
     };
   });
-
-  const staleApps = filteredApps.filter((app: AppData) => {
-    const date = new Date(app['Last Updated']);
-    const twoYearsAgo = new Date();
-    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-    return !isNaN(date.getTime()) && date < twoYearsAgo && (app.Rating || 0) >= 4.0;
-  }).sort((a, b) => (b.Rating || 0) - (a.Rating || 0)).slice(0, 20).map((app: AppData) => ({
-    App: app.App,
-    Category: app.Category,
-    Rating: app.Rating,
-    'Last Updated': app['Last Updated'],
-    Installs: formatInstalls(parseInstalls(app.Installs || '0')),
-    Reviews: app.Reviews,
-    Genres: (app as any).Genres // Ensure Genres is included for consistent App rendering
-  }));
 
   const totalAppsWithDates = appsWithDates.length;
   const recentlyUpdated = appsWithDates.filter(app => {
@@ -172,7 +198,7 @@ const TrendsPage: React.FC = () => {
 
   const avgUpdateRate = totalAppsWithDates > 0 ? (recentlyUpdated / totalAppsWithDates) * 100 : 0;
 
-  const highRatedStaleAppsCount = staleApps.length;
+  const highRatedStaleAppsCount = sortedStaleApps.length; // Uses the length of the currently sorted list
 
   const trendInsightsData = [
     {
@@ -233,8 +259,8 @@ const TrendsPage: React.FC = () => {
     });
 
     return Object.entries(engagementMap).map(([category, data]) => ({
-      name: category, // Mapped to 'name' for BarChartComponent
-      value: data.count > 0 ? (data.totalEngagement / data.count) : 0, // Mapped to 'value'
+      name: category,
+      value: data.count > 0 ? (data.totalEngagement / data.count) : 0,
     })).sort((a, b) => b.value - a.value); // Sort by value (avgEngagement)
   }, [appsWithProcessedData]);
 
@@ -272,76 +298,59 @@ const TrendsPage: React.FC = () => {
 
   // Columns for the "High-Rated Apps Not Updated Recently" table
   const staleAppsColumns = useMemo(() => [
-    { key: 'App', label: 'App Name', sortable: true, renderCell: appNameRenderCell, textAlign: 'left' },
-    { key: 'Category', label: 'Category', sortable: true },
-    { key: 'Rating', label: 'Rating', sortable: true, renderCell: ratingRenderCell, textAlign: 'right' },
-    { key: 'Last Updated', label: 'Last Updated', sortable: true },
+    { key: 'App', label: 'App Name', renderCell: appNameRenderCell, textAlign: 'left' },
+    { key: 'Category', label: 'Category' },
+    { key: 'Rating', label: 'Rating', renderCell: ratingRenderCell, textAlign: 'right' },
+    { key: 'Last Updated', label: 'Last Updated' },
     {
-      key: 'Installs',
+      key: 'InstallsNumeric',
       label: 'Installs',
-      sortable: true,
       textAlign: 'right',
       renderCell: (app: AppData) => (
         <span className="font-mono text-purple-600">
-          {formatInstalls(parseInstalls(app.Installs || '0'))}
+          {formatInstalls(app.InstallsNumeric)}
         </span>
       )
     },
     {
-      key: 'Reviews',
+      key: 'ReviewsNumeric',
       label: 'Reviews',
-      sortable: true,
       textAlign: 'right',
       renderCell: (app: AppData) => (
         <span className="font-mono text-green-600">
-          {formatInstalls(parseInt(app.Reviews))}
+          {formatInstalls(app.ReviewsNumeric)}
         </span>
       )
     }
   ], []);
 
-  const handleSort = (value: string) => {
-    setSortBy(value);
-  };
-
-  const loadCsvData = () => {
-    if (fetchApps) {
-      fetchApps();
-    }
-  };
-
   // Columns for the "Top Apps in Category" table
   const topAppsTableColumns = useMemo(() => [
-    // The Rank column is now handled by DataTable's showRankColumn prop
     {
       key: 'App',
       label: 'App',
-      sortable: true,
       textAlign: 'left',
-      renderCell: appNameRenderCell // Use reusable renderCell
+      renderCell: appNameRenderCell
     },
     {
       key: 'Rating',
       label: 'Rating',
-      sortable: true,
       textAlign: 'right',
-      renderCell: ratingRenderCell // Use reusable renderCell
+      renderCell: ratingRenderCell
     },
     {
-      key: 'Reviews',
+      key: 'ReviewsNumeric',
       label: 'Reviews',
-      sortable: true,
       textAlign: 'right',
       renderCell: (app: AppData) => (
         <span className="font-mono text-green-600">
-          {formatInstalls(parseInt(app.Reviews))}
+          {formatInstalls(app.ReviewsNumeric)}
         </span>
       )
     },
     {
-      key: 'InstallsNumeric', // Use the numeric key for sorting
+      key: 'InstallsNumeric',
       label: 'Installs',
-      sortable: true,
       textAlign: 'right',
       renderCell: (app: AppData) => (
         <span className="font-mono text-purple-600">
@@ -352,7 +361,6 @@ const TrendsPage: React.FC = () => {
     {
       key: 'Price',
       label: 'Price',
-      sortable: true,
       textAlign: 'right',
       renderCell: (app: AppData) => (
         <span className="font-mono text-orange-600">
@@ -363,7 +371,6 @@ const TrendsPage: React.FC = () => {
     {
       key: 'Size',
       label: 'Size',
-      sortable: true,
       textAlign: 'right',
       renderCell: (app: AppData) => (
         <span className="text-gray-600">
@@ -374,7 +381,6 @@ const TrendsPage: React.FC = () => {
     {
       key: 'Content Rating',
       label: 'Content Rating',
-      sortable: true,
       textAlign: 'right',
       renderCell: (app: AppData) => (
         <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-xs">
@@ -385,7 +391,6 @@ const TrendsPage: React.FC = () => {
     {
       key: 'EngagementRate',
       label: 'Engagement',
-      sortable: true,
       textAlign: 'right',
       renderCell: (app: AppData) => (
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -399,9 +404,11 @@ const TrendsPage: React.FC = () => {
     },
   ], []);
 
-
-  const top20SortedApps = useMemo(() => sortedApps.slice(0, 20), [sortedApps]);
-
+  const loadCsvData = () => {
+    if (fetchApps) {
+      fetchApps();
+    }
+  };
 
   if (loading) {
     return (
@@ -478,16 +485,51 @@ const TrendsPage: React.FC = () => {
         />
       </div>
 
-      {/* Stale but Good Apps Table (now with consistent styling and rank) */}
-      <DataTable
-        data={staleApps}
-        columns={staleAppsColumns}
-        title="High-Rated Apps Not Updated Recently (2+ years, 4.0+ rating)"
-        pageSize={15}
-        initialSortBy="Rating"
-        initialSortDirection="desc"
-        showRankColumn={true} /* Added rank column here */
-      />
+      {/* !!! START: Modified High-Rated Apps Table Section for consistent UX !!! */}
+      <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
+          <h3 className="text-xl font-semibold text-gray-900">
+            High-Rated Apps Not Updated Recently (2+ years, 4.0+ rating)
+          </h3>
+          <div className="flex space-x-2">
+            <select
+              value={sortByStaleApps}
+              onChange={(e) => setSortByStaleApps(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="Rating">⭐ Rating</option>
+              <option value="InstallsNumeric">📈 Installs</option>
+              <option value="ReviewsNumeric">💬 Reviews</option>
+              <option value="Last Updated">📅 Last Updated</option>
+            </select>
+            <button
+              onClick={() => setSortOrderStaleApps(sortOrderStaleApps === 'desc' ? 'asc' : 'desc')}
+              className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
+            >
+              {sortOrderStaleApps === 'desc' ? '↓' : '↑'}
+            </button>
+            <button
+              onClick={loadCsvData}
+              className="flex items-center space-x-2 px-3 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors text-sm"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <DataTable
+          data={sortedStaleApps} // Pass the full sorted list
+          columns={staleAppsColumns}
+          title="" // Empty title as it's handled externally
+          pageSize={15} // Pagination enabled, showing 15 items per page
+          showPagination={true} // Explicitly show pagination
+          enableSorting={false} // No internal sorting controls (external only)
+          initialSortBy={sortByStaleApps}
+          initialSortDirection={sortOrderStaleApps}
+          showRankColumn={true}
+        />
+      </div>
+      {/* !!! END: Modified High-Rated Apps Table Section !!! */}
 
       {/* Insights */}
       <InsightsCard
@@ -495,7 +537,7 @@ const TrendsPage: React.FC = () => {
         insights={trendInsightsData}
       />
 
-      {/* Top Trending Apps Table (consistent styling and rank) */}
+      {/* !!! START: Modified Top Apps in Category Table Section for consistent UX !!! */}
       <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
         <div className="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
           <h3 className="text-xl font-semibold text-gray-900">
@@ -512,20 +554,20 @@ const TrendsPage: React.FC = () => {
               ))}
             </select>
             <select
-              value={sortBy}
-              onChange={(e) => handleSort(e.target.value)}
+              value={sortByCategoryApps}
+              onChange={(e) => setSortByCategoryApps(e.target.value)}
               className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="InstallsNumeric">📈 Installs</option>
               <option value="Rating">⭐ Rating</option>
-              <option value="Reviews">💬 Reviews</option>
+              <option value="ReviewsNumeric">💬 Reviews</option>
               <option value="EngagementRate">⚡ Engagement</option>
             </select>
             <button
-              onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+              onClick={() => setSortOrderCategoryApps(sortOrderCategoryApps === 'desc' ? 'asc' : 'desc')}
               className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
             >
-              {sortOrder === 'desc' ? '↓' : '↑'}
+              {sortOrderCategoryApps === 'desc' ? '↓' : '↑'}
             </button>
             <button
               onClick={loadCsvData}
@@ -537,17 +579,18 @@ const TrendsPage: React.FC = () => {
         </div>
 
         <DataTable
-            data={top20SortedApps}
+            data={sortedCategoryApps} // Pass the full sorted list
             columns={topAppsTableColumns}
-            title=""
-            pageSize={20}
-            showPagination={false} // This table is explicitly showing top 20 without pagination
-            enableSorting={false} // Sorting handled by parent component's controls
-            initialSortBy={sortBy}
-            initialSortDirection={sortOrder}
-            showRankColumn={true} /* Added rank column here */
+            title="" // Empty title as it's handled externally
+            pageSize={15} // Pagination enabled, showing 15 items per page
+            showPagination={true} // Explicitly show pagination
+            enableSorting={false} // No internal sorting controls (external only)
+            initialSortBy={sortByCategoryApps}
+            initialSortDirection={sortOrderCategoryApps}
+            showRankColumn={true}
         />
       </div>
+      {/* !!! END: Modified Top Apps in Category Table Section !!! */}
 
       {/* Detailed Analytics Grid - Containing the Bar Chart for Engagement Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
