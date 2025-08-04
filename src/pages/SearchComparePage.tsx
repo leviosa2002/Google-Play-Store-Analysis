@@ -2,6 +2,27 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Search, Star, Download, MessageSquare, DollarSign } from 'lucide-react';
 import { parseInstalls, formatInstalls } from '../utils/dataTransformers';
+import AppComparisonCard from '../components/AppComparisonCard'; // Import the new component
+
+// Define the AppData interface here as well, to ensure consistency
+// It should match the one in AppComparisonCard.tsx
+interface AppData {
+  App: string;
+  Category: string;
+  Rating: number;
+  Reviews: number;
+  Installs: string; // Stored as string, parsed to number
+  Type: 'Free' | 'Paid';
+  Price: string;
+  'Content Rating': string;
+  Size: string;
+  'Last Updated': string;
+  'Android Ver': string;
+  // These are custom fields added in getAppDetails
+  reviewCount: number;
+  avgSentiment: string; // Formatted string
+  sentimentLabel: 'Positive' | 'Negative' | 'Neutral';
+}
 
 const SearchComparePage: React.FC = () => {
   const { filteredApps, filteredReviews, loading } = useData();
@@ -20,9 +41,9 @@ const SearchComparePage: React.FC = () => {
   const searchResults = useMemo(() => {
     if (!searchTerm) return [];
     return filteredApps
-      .filter(app => 
+      .filter(app =>
         app.App.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        app.Category.toLowerCase().includes(searchTerm.toLowerCase())
+        (app.Category || '').toLowerCase().includes(searchTerm.toLowerCase()) // Added null check for Category
       )
       .slice(0, 10);
   }, [filteredApps, searchTerm]);
@@ -35,24 +56,34 @@ const SearchComparePage: React.FC = () => {
     }
   };
 
-  const getAppDetails = (appName: string) => {
+  const getAppDetails = (appName: string): AppData | null => { // Explicitly type the return
     const app = filteredApps.find(a => a.App === appName);
     if (!app) return null;
 
     const appReviews = filteredReviews.filter(review => review.App === appName);
-    const avgSentiment = appReviews.length > 0 
-      ? appReviews.reduce((sum, review) => sum + review.Sentiment_Polarity, 0) / appReviews.length 
+    const avgSentiment = appReviews.length > 0
+      ? appReviews.reduce((sum, review) => sum + (review.Sentiment_Polarity || 0), 0) / appReviews.length
       : 0;
 
     return {
-      ...app,
+      App: app.App || '',
+      Category: app.Category || 'N/A',
+      Rating: app.Rating || 0,
+      Reviews: app.Reviews || 0,
+      Installs: app.Installs || '0+',
+      Type: (app.Type as 'Free' | 'Paid') || 'Free', // Cast to the specific union type
+      Price: app.Price || '0',
+      'Content Rating': app['Content Rating'] || 'Everyone',
+      Size: app.Size || 'Varies with device',
+      'Last Updated': app['Last Updated'] || 'N/A',
+      'Android Ver': app['Android Ver'] || 'Varies with device',
       reviewCount: appReviews.length,
       avgSentiment: avgSentiment.toFixed(3),
       sentimentLabel: avgSentiment > 0.1 ? 'Positive' : avgSentiment < -0.1 ? 'Negative' : 'Neutral'
     };
   };
 
-  const selectedAppDetails = selectedApps.map(getAppDetails).filter(Boolean);
+  const selectedAppDetails: AppData[] = selectedApps.map(getAppDetails).filter(Boolean) as AppData[];
 
   return (
     <div className="p-6 space-y-6">
@@ -97,11 +128,11 @@ const SearchComparePage: React.FC = () => {
                   <div className="flex items-center justify-between text-xs text-gray-500">
                     <span className="flex items-center">
                       <Star className="w-3 h-3 mr-1" />
-                      {app.Rating.toFixed(1)}
+                      {(app.Rating || 0).toFixed(1)}
                     </span>
                     <span className="flex items-center">
                       <Download className="w-3 h-3 mr-1" />
-                      {formatInstalls(parseInstalls(app.Installs))}
+                      {formatInstalls(parseInstalls(app.Installs || '0'))}
                     </span>
                   </div>
                   {selectedApps.includes(app.App) && (
@@ -128,87 +159,8 @@ const SearchComparePage: React.FC = () => {
           </div>
 
           <div className={`grid grid-cols-1 ${selectedAppDetails.length === 2 ? 'lg:grid-cols-2' : ''} gap-6`}>
-            {selectedAppDetails.map((app, index) => (
-              <div key={app.App} className="border border-gray-200 rounded-lg p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-xl font-bold text-gray-900">{app.App}</h4>
-                  <span className={`px-2 py-1 text-xs rounded-full ${
-                    app.Type === 'Free' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {app.Type}
-                  </span>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-gray-700">Category</p>
-                      <p className="text-lg text-gray-900">{app.Category}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium text-gray-700">Content Rating</p>
-                      <p className="text-lg text-gray-900">{app['Content Rating']}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center space-x-2">
-                      <Star className="w-5 h-5 text-yellow-500" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">Rating</p>
-                        <p className="text-lg font-bold text-gray-900">{app.Rating.toFixed(1)}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Download className="w-5 h-5 text-green-500" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">Installs</p>
-                        <p className="text-lg font-bold text-gray-900">{formatInstalls(parseInstalls(app.Installs))}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center space-x-2">
-                      <MessageSquare className="w-5 h-5 text-blue-500" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">Reviews</p>
-                        <p className="text-lg font-bold text-gray-900">{app.Reviews.toLocaleString()}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <DollarSign className="w-5 h-5 text-purple-500" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">Price</p>
-                        <p className="text-lg font-bold text-gray-900">{app.Price || 'Free'}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">Sentiment Analysis</p>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <span className={`px-2 py-1 text-xs rounded-full ${
-                        app.sentimentLabel === 'Positive' ? 'bg-green-100 text-green-800' :
-                        app.sentimentLabel === 'Negative' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {app.sentimentLabel}
-                      </span>
-                      <span className="text-sm text-gray-600">({app.avgSentiment})</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-medium text-gray-700">Additional Info</p>
-                    <div className="mt-1 space-y-1 text-sm text-gray-600">
-                      <p>Size: {app.Size}</p>
-                      <p>Last Updated: {app['Last Updated']}</p>
-                      <p>Android Version: {app['Android Ver']}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {selectedAppDetails.map((app) => (
+              <AppComparisonCard key={app.App} app={app} /> // Use the new component here
             ))}
           </div>
 

@@ -5,12 +5,18 @@ import PieChartComponent from '../components/charts/PieChart';
 import ScatterPlot from '../components/charts/ScatterPlot';
 import DataTable from '../components/DataTable';
 import StatsCard from '../components/StatsCard';
-import { Download, TrendingUp, Smartphone, DollarSign } from 'lucide-react';
-import { 
-  getInstallsDistribution, 
-  getTopApps, 
-  parseInstalls, 
-  formatInstalls 
+import InsightsCard from '../components/InsightsCard'; // <--- Import InsightsCard
+import {
+  Download,
+  TrendingUp,
+  Smartphone,
+  DollarSign
+} from 'lucide-react';
+import {
+  getInstallsDistribution,
+  getTopApps,
+  parseInstalls,
+  formatInstalls
 } from '../utils/dataTransformers';
 
 const InstallsAnalysisPage: React.FC = () => {
@@ -26,13 +32,13 @@ const InstallsAnalysisPage: React.FC = () => {
 
   const installsDistribution = getInstallsDistribution(filteredApps);
   const topInstalledApps = getTopApps(filteredApps, 'Installs', 20);
-  
+
   // Install vs Rating correlation data
   const installRatingData = filteredApps
-    .filter(app => app.Rating > 0 && parseInstalls(app.Installs) > 0)
+    .filter(app => (app.Rating || 0) > 0 && parseInstalls(app.Installs || '0') > 0)
     .map(app => ({
-      installs: parseInstalls(app.Installs),
-      rating: app.Rating,
+      installs: parseInstalls(app.Installs || '0'),
+      rating: app.Rating || 0,
       name: app.App
     }))
     .slice(0, 500); // Limit for performance
@@ -40,28 +46,70 @@ const InstallsAnalysisPage: React.FC = () => {
   // Free vs Paid installs comparison
   const freeAppsInstalls = filteredApps
     .filter(app => app.Type === 'Free')
-    .reduce((sum, app) => sum + parseInstalls(app.Installs), 0);
-  
+    .reduce((sum, app) => sum + parseInstalls(app.Installs || '0'), 0);
+
   const paidAppsInstalls = filteredApps
     .filter(app => app.Type === 'Paid')
-    .reduce((sum, app) => sum + parseInstalls(app.Installs), 0);
+    .reduce((sum, app) => sum + parseInstalls(app.Installs || '0'), 0);
+
+  const totalMarketInstalls = freeAppsInstalls + paidAppsInstalls; // Corrected total for free vs paid percentage
 
   const freeVsPaidData = [
     { name: 'Free Apps', value: freeAppsInstalls },
     { name: 'Paid Apps', value: paidAppsInstalls }
   ];
 
-  const totalInstalls = filteredApps.reduce((sum, app) => sum + parseInstalls(app.Installs), 0);
-  const averageInstalls = totalInstalls / filteredApps.length;
+  const totalAppsCount = filteredApps.length; // Renamed to avoid confusion with totalInstalls
+  const totalInstalls = filteredApps.reduce((sum, app) => sum + parseInstalls(app.Installs || '0'), 0);
+  const averageInstalls = totalAppsCount > 0 ? totalInstalls / totalAppsCount : 0;
   const topApp = topInstalledApps[0];
   const freeAppsCount = filteredApps.filter(app => app.Type === 'Free').length;
+
+
+  // Prepare data for the InsightsCard
+  const keyInsights = [
+    {
+      id: 'most-popular-install-range',
+      label: 'Most Popular Install Range',
+      value: installsDistribution.length > 0
+        ? installsDistribution.reduce((max, current) =>
+            current.value > max.value ? current : max
+          ).name
+        : 'N/A',
+      description: installsDistribution.length > 0
+        ? `${installsDistribution.reduce((max, current) => current.value > max.value ? current : max).name} has the most apps`
+        : 'No data available',
+      colorClass: 'bg-green-500',
+    },
+    {
+      id: 'free-vs-paid-dominance',
+      label: 'Free vs Paid Dominance',
+      value: `${totalMarketInstalls > 0 ? ((freeAppsInstalls / totalMarketInstalls) * 100).toFixed(1) : '0.0'}% Free`,
+      description: `Free apps account for ${totalMarketInstalls > 0 ? ((freeAppsInstalls / totalMarketInstalls) * 100).toFixed(1) : '0.0'}% of total installs`,
+      colorClass: 'bg-blue-500',
+    },
+    {
+      id: 'top-performer',
+      label: 'Top Performer',
+      value: topApp?.App || 'N/A',
+      description: `${topApp?.App || 'N/A'} leads with ${formatInstalls(parseInstalls(topApp?.Installs || '0'))} installs`,
+      colorClass: 'bg-purple-500',
+    },
+    {
+      id: 'market-distribution',
+      label: 'Market Distribution',
+      value: `${installsDistribution.filter(d => d.value > 0).length}`,
+      description: `${installsDistribution.filter(d => d.value > 0).length} different install ranges represented`,
+      colorClass: 'bg-orange-500',
+    },
+  ];
 
   const tableColumns = [
     { key: 'App', label: 'App Name', sortable: true },
     { key: 'Category', label: 'Category', sortable: true },
-    { 
-      key: 'Installs', 
-      label: 'Installs', 
+    {
+      key: 'Installs',
+      label: 'Installs',
       sortable: true,
       render: (value: string) => formatInstalls(parseInstalls(value))
     },
@@ -95,13 +143,13 @@ const InstallsAnalysisPage: React.FC = () => {
         />
         <StatsCard
           title="Top App"
-          value={topApp ? formatInstalls(parseInstalls(topApp.Installs)) : '0'}
+          value={topApp ? formatInstalls(parseInstalls(topApp.Installs || '0')) : 'N/A'}
           icon={Smartphone}
           color="purple"
         />
         <StatsCard
           title="Free Apps Ratio"
-          value={`${((freeAppsCount / filteredApps.length) * 100).toFixed(1)}%`}
+          value={`${totalAppsCount > 0 ? ((freeAppsCount / totalAppsCount) * 100).toFixed(1) : '0.0'}%`}
           icon={DollarSign}
           color="orange"
         />
@@ -143,54 +191,11 @@ const InstallsAnalysisPage: React.FC = () => {
         pageSize={20}
       />
 
-      {/* Insights */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Key Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Most Popular Install Range</p>
-                <p className="text-sm text-gray-600">
-                  {installsDistribution.reduce((max, current) => 
-                    current.value > max.value ? current : max
-                  ).name} has the most apps
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Free vs Paid Dominance</p>
-                <p className="text-sm text-gray-600">
-                  Free apps account for {((freeAppsInstalls / totalInstalls) * 100).toFixed(1)}% of total installs
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Top Performer</p>
-                <p className="text-sm text-gray-600">
-                  {topApp?.App} leads with {formatInstalls(parseInstalls(topApp?.Installs || '0'))} installs
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Market Distribution</p>
-                <p className="text-sm text-gray-600">
-                  {installsDistribution.filter(d => d.value > 0).length} different install ranges represented
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Insights - Now using InsightsCard */}
+      <InsightsCard
+        title="Key Insights"
+        insights={keyInsights}
+      />
     </div>
   );
 };

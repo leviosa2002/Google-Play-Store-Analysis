@@ -3,17 +3,18 @@ import { useData } from '../context/DataContext';
 import StatsCard from '../components/StatsCard';
 import BarChartComponent from '../components/charts/BarChart';
 import PieChartComponent from '../components/charts/PieChart';
-import { 
-  Smartphone, 
-  Star, 
-  Download, 
+import InsightsCard from '../components/InsightsCard'; // <--- Import InsightsCard
+import {
+  Smartphone,
+  Star,
+  Download,
   MessageSquare,
   TrendingUp,
   Users
 } from 'lucide-react';
-import { 
-  getCategoryDistribution, 
-  getRatingDistribution, 
+import {
+  getCategoryDistribution,
+  getRatingDistribution,
   getSentimentDistribution,
   formatInstalls,
   parseInstalls
@@ -33,9 +34,10 @@ const HomePage: React.FC = () => {
     );
   }
 
+  // Handle cases where totalApps might be 0 to prevent division by zero errors
   const totalApps = filteredApps.length;
-  const averageRating = filteredApps.reduce((sum, app) => sum + app.Rating, 0) / totalApps;
-  const totalInstalls = filteredApps.reduce((sum, app) => sum + parseInstalls(app.Installs), 0);
+  const averageRating = totalApps > 0 ? filteredApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / totalApps : 0;
+  const totalInstalls = filteredApps.reduce((sum, app) => sum + parseInstalls(app.Installs || '0'), 0);
   const totalReviews = filteredReviews.length;
   const freeApps = filteredApps.filter(app => app.Type === 'Free').length;
   const paidApps = filteredApps.filter(app => app.Type === 'Paid').length;
@@ -43,6 +45,38 @@ const HomePage: React.FC = () => {
   const categoryData = getCategoryDistribution(filteredApps).slice(0, 10);
   const ratingData = getRatingDistribution(filteredApps);
   const sentimentData = getSentimentDistribution(filteredReviews);
+
+  // Prepare data for the InsightsCard
+  const keyInsights = [
+    {
+      id: 'most-popular-category',
+      label: 'Most Popular Category',
+      value: categoryData[0]?.name || 'N/A',
+      description: `${categoryData[0]?.name || 'N/A'} with ${categoryData[0]?.value || 0} apps`,
+      colorClass: 'bg-blue-500',
+    },
+    {
+      id: 'average-app-rating',
+      label: 'Average App Rating',
+      value: averageRating.toFixed(2),
+      description: `${averageRating.toFixed(2)} out of 5.0 stars`,
+      colorClass: 'bg-green-500',
+    },
+    {
+      id: 'free-vs-paid',
+      label: 'Free vs Paid',
+      value: `${totalApps > 0 ? ((freeApps / totalApps) * 100).toFixed(1) : '0.0'}% Free`,
+      description: `${totalApps > 0 ? ((freeApps / totalApps) * 100).toFixed(1) : '0.0'}% free apps, ${totalApps > 0 ? ((paidApps / totalApps) * 100).toFixed(1) : '0.0'}% paid apps`,
+      colorClass: 'bg-purple-500',
+    },
+    {
+      id: 'review-sentiment',
+      label: 'Review Sentiment',
+      value: `${sentimentData.find(s => s.name === 'Positive')?.value || 0} Positive`,
+      description: `${sentimentData.find(s => s.name === 'Positive')?.value || 0} positive reviews analyzed`,
+      colorClass: 'bg-orange-500',
+    },
+  ];
 
   return (
     <div className="p-6 space-y-6">
@@ -82,13 +116,13 @@ const HomePage: React.FC = () => {
         />
         <StatsCard
           title="Free Apps"
-          value={`${((freeApps / totalApps) * 100).toFixed(1)}%`}
+          value={`${totalApps > 0 ? ((freeApps / totalApps) * 100).toFixed(1) : '0.0'}%`}
           icon={TrendingUp}
           color="green"
         />
         <StatsCard
           title="Paid Apps"
-          value={`${((paidApps / totalApps) * 100).toFixed(1)}%`}
+          value={`${totalApps > 0 ? ((paidApps / totalApps) * 100).toFixed(1) : '0.0'}%`}
           icon={Users}
           color="red"
         />
@@ -114,47 +148,11 @@ const HomePage: React.FC = () => {
           title="Review Sentiment Distribution"
           height={400}
         />
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Key Insights</h3>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Most Popular Category</p>
-                <p className="text-sm text-gray-600">
-                  {categoryData[0]?.name} with {categoryData[0]?.value} apps
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Average App Rating</p>
-                <p className="text-sm text-gray-600">
-                  {averageRating.toFixed(2)} out of 5.0 stars
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Free vs Paid</p>
-                <p className="text-sm text-gray-600">
-                  {((freeApps / totalApps) * 100).toFixed(1)}% free apps, {((paidApps / totalApps) * 100).toFixed(1)}% paid apps
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Review Sentiment</p>
-                <p className="text-sm text-gray-600">
-                  {sentimentData.find(s => s.name === 'Positive')?.value || 0} positive reviews analyzed
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Replaced the manual insight div with InsightsCard */}
+        <InsightsCard
+          title="Key Insights"
+          insights={keyInsights}
+        />
       </div>
     </div>
   );

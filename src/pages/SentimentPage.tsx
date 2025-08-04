@@ -1,3 +1,4 @@
+// src/pages/SentimentPage.tsx
 import React from 'react';
 import { useData } from '../context/DataContext';
 import BarChartComponent from '../components/charts/BarChart';
@@ -5,8 +6,35 @@ import PieChartComponent from '../components/charts/PieChart';
 import ScatterPlot from '../components/charts/ScatterPlot';
 import DataTable from '../components/DataTable';
 import StatsCard from '../components/StatsCard';
+import InsightsCard from '../components/InsightsCard';
 import { MessageSquare, TrendingUp, Heart, Frown } from 'lucide-react';
 import { getSentimentDistribution } from '../utils/dataTransformers';
+
+// Define interfaces for clarity and type safety
+interface AppSentimentAnalysis {
+  App: string;
+  Category: string;
+  Rating: number | null; // Rating can be null in raw data
+  'Total Reviews': number;
+  'Avg Polarity': number;
+  'Avg Subjectivity': number;
+  'Positive %': number;
+  'Negative %': number;
+  'Neutral %': number;
+}
+
+interface CategorySentiment {
+  name: string;
+  value: number;
+}
+
+interface ReviewData {
+  App: string;
+  Translated_Review: string;
+  Sentiment: 'Positive' | 'Negative' | 'Neutral';
+  Sentiment_Polarity: number | null;
+  Sentiment_Subjectivity: number | null;
+}
 
 const SentimentPage: React.FC = () => {
   const { filteredApps, filteredReviews, loading } = useData();
@@ -20,74 +48,136 @@ const SentimentPage: React.FC = () => {
   }
 
   const sentimentDistribution = getSentimentDistribution(filteredReviews);
-  
-  // Sentiment by app analysis
-  const appSentimentAnalysis = filteredApps.map(app => {
-    const appReviews = filteredReviews.filter(review => review.App === app.App);
-    if (appReviews.length === 0) return null;
 
-    const avgPolarity = appReviews.reduce((sum, review) => sum + (review.Sentiment_Polarity || 0), 0) / appReviews.length;
-    const avgSubjectivity = appReviews.reduce((sum, review) => sum + (review.Sentiment_Subjectivity || 0), 0) / appReviews.length;
-    
-    const positiveReviews = appReviews.filter(r => r.Sentiment === 'Positive').length;
-    const negativeReviews = appReviews.filter(r => r.Sentiment === 'Negative').length;
-    const neutralReviews = appReviews.filter(r => r.Sentiment === 'Neutral').length;
+  // --- START MODIFICATION FOR appSentimentAnalysis: Ensures unique apps in the table ---
+  // 1. Get unique app names from all filtered reviews
+  const uniqueAppNames = [...new Set(filteredReviews.map(review => review.App))];
 
-    return {
-      App: app.App,
-      Category: app.Category,
-      Rating: app.Rating,
-      'Total Reviews': appReviews.length,
-      'Avg Polarity': Number(avgPolarity.toFixed(3)),
-      'Avg Subjectivity': Number(avgSubjectivity.toFixed(3)),
-      'Positive %': Number(((positiveReviews / appReviews.length) * 100).toFixed(1)),
-      'Negative %': Number(((negativeReviews / appReviews.length) * 100).toFixed(1)),
-      'Neutral %': Number(((neutralReviews / appReviews.length) * 100).toFixed(1))
-    };
-  }).filter(Boolean).sort((a, b) => (b?.['Total Reviews'] || 0) - (a?.['Total Reviews'] || 0)).slice(0, 50);
+  // 2. Calculate sentiment analysis for each unique app name
+  const appSentimentAnalysis: AppSentimentAnalysis[] = uniqueAppNames
+    .map(appName => {
+      // Get all reviews for the current unique app
+      const appReviews = filteredReviews.filter(review => review.App === appName);
+      if (appReviews.length === 0) return null; // Should ideally not happen if appName came from filteredReviews
+
+      // Find the corresponding app's data (category, rating) from the filteredApps list
+      // Use .find() to get the first matching app, assuming consistency
+      const appData = filteredApps.find(app => app.App === appName);
+
+      // Calculate sentiment metrics
+      const avgPolarity = appReviews.reduce((sum, review) => sum + (review.Sentiment_Polarity || 0), 0) / appReviews.length;
+      const avgSubjectivity = appReviews.reduce((sum, review) => sum + (review.Sentiment_Subjectivity || 0), 0) / appReviews.length;
+
+      const positiveReviews = appReviews.filter(r => r.Sentiment === 'Positive').length;
+      const negativeReviews = appReviews.filter(r => r.Sentiment === 'Negative').length;
+      const neutralReviews = appReviews.filter(r => r.Sentiment === 'Neutral').length;
+
+      return {
+        App: appName,
+        Category: appData?.Category || 'N/A', // Use optional chaining for safety
+        Rating: appData?.Rating || null,
+        'Total Reviews': appReviews.length,
+        'Avg Polarity': Number(avgPolarity.toFixed(3)),
+        'Avg Subjectivity': Number(avgSubjectivity.toFixed(3)),
+        'Positive %': Number(((positiveReviews / appReviews.length) * 100).toFixed(1)),
+        'Negative %': Number(((negativeReviews / appReviews.length) * 100).toFixed(1)),
+        'Neutral %': Number(((neutralReviews / appReviews.length) * 100).toFixed(1))
+      };
+    })
+    .filter((app): app is AppSentimentAnalysis => app !== null) // Filter out any null entries if an app had no reviews
+    .sort((a, b) => b['Total Reviews'] - a['Total Reviews']) // Sort by total reviews (descending)
+    .slice(0, 50); // Take the top 50 apps
+  // --- END MODIFICATION FOR appSentimentAnalysis ---
 
   // Sentiment vs Rating correlation
-  const sentimentRatingData = appSentimentAnalysis.map(app => ({
-    rating: app?.Rating || 0,
-    polarity: app?.['Avg Polarity'] || 0,
-    name: app?.App || ''
-  })).filter(item => item.rating > 0);
+  const sentimentRatingData = appSentimentAnalysis
+    .filter(app => (app.Rating || 0) > 0) // Filter out apps without a valid rating
+    .map(app => ({
+      rating: app.Rating || 0,
+      polarity: app['Avg Polarity'],
+      name: app.App
+    }));
 
   // Top positive and negative reviews
-  const topPositiveReviews = filteredReviews
-    .filter(review => review.Sentiment === 'Positive' && review.Sentiment_Polarity > 0.5)
+  // These lists will show individual reviews, even if from the same app.
+  // If you want only one review per app, a further de-duplication step would be needed here.
+  const topPositiveReviews: ReviewData[] = filteredReviews
+    .filter(review => review.Sentiment === 'Positive' && (review.Sentiment_Polarity || 0) > 0.5)
     .sort((a, b) => (b.Sentiment_Polarity || 0) - (a.Sentiment_Polarity || 0))
-    .slice(0, 10);
+    .slice(0, 10) as ReviewData[];
 
-  const topNegativeReviews = filteredReviews
-    .filter(review => review.Sentiment === 'Negative' && review.Sentiment_Polarity < -0.1)
+  const topNegativeReviews: ReviewData[] = filteredReviews
+    .filter(review => review.Sentiment === 'Negative' && (review.Sentiment_Polarity || 0) < -0.1)
     .sort((a, b) => (a.Sentiment_Polarity || 0) - (b.Sentiment_Polarity || 0))
-    .slice(0, 10);
+    .slice(0, 10) as ReviewData[];
 
   // Statistics
   const totalReviews = filteredReviews.length;
   const positiveReviews = filteredReviews.filter(r => r.Sentiment === 'Positive').length;
   const negativeReviews = filteredReviews.filter(r => r.Sentiment === 'Negative').length;
   const neutralReviews = filteredReviews.filter(r => r.Sentiment === 'Neutral').length;
-  const avgPolarity = filteredReviews.reduce((sum, review) => sum + (review.Sentiment_Polarity || 0), 0) / totalReviews;
+  const avgPolarity = totalReviews > 0 ? filteredReviews.reduce((sum, review) => sum + (review.Sentiment_Polarity || 0), 0) / totalReviews : 0;
 
   // Sentiment by category
   const categories = [...new Set(filteredApps.map(app => app.Category))];
-  const sentimentByCategory = categories.map(category => {
-    const categoryApps = filteredApps.filter(app => app.Category === category);
-    const categoryReviews = filteredReviews.filter(review => 
-      categoryApps.some(app => app.App === review.App)
-    );
-    
-    if (categoryReviews.length === 0) return null;
-    
-    const avgPolarity = categoryReviews.reduce((sum, review) => sum + (review.Sentiment_Polarity || 0), 0) / categoryReviews.length;
-    
-    return {
-      name: category,
-      value: Number(avgPolarity.toFixed(3))
-    };
-  }).filter(Boolean).sort((a, b) => (b?.value || 0) - (a?.value || 0)).slice(0, 15);
+  const sentimentByCategory: CategorySentiment[] = categories
+    .map(category => {
+      const categoryApps = filteredApps.filter(app => app.Category === category);
+      const categoryReviews = filteredReviews.filter(review =>
+        categoryApps.some(app => app.App === review.App)
+      );
+
+      if (categoryReviews.length === 0) return null;
+
+      const categoryAvgPolarity = categoryReviews.reduce((sum, review) => sum + (review.Sentiment_Polarity || 0), 0) / categoryReviews.length;
+
+      return {
+        name: category,
+        value: Number(categoryAvgPolarity.toFixed(3))
+      };
+    })
+    .filter((cat): cat is CategorySentiment => cat !== null)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 15);
+
+  // Get the best category for insights, handling empty array
+  const bestCategorySentiment = sentimentByCategory.length > 0 ? sentimentByCategory[0] : null;
+
+  // Prepare data for the generic InsightsCard
+  const sentimentInsightsData = [
+    {
+      id: 'positive',
+      label: 'Positive Sentiment',
+      value: positiveReviews,
+      description: `${positiveReviews.toLocaleString()} positive reviews (${totalReviews > 0 ? ((positiveReviews / totalReviews) * 100).toFixed(1) : '0.0'}%)`,
+      colorClass: 'bg-green-500',
+      icon: Heart, // Added icon
+    },
+    {
+      id: 'best-category',
+      label: 'Best Category Sentiment',
+      value: bestCategorySentiment?.value ?? 'N/A',
+      description: `${bestCategorySentiment?.name || 'N/A'} has the highest sentiment polarity (${bestCategorySentiment?.value?.toFixed(3) ?? 'N/A'})`,
+      colorClass: 'bg-pink-500',
+      icon: TrendingUp, // Added icon
+    },
+    {
+      id: 'negative',
+      label: 'Negative Sentiment',
+      value: negativeReviews,
+      description: `${negativeReviews.toLocaleString()} negative reviews (${totalReviews > 0 ? ((negativeReviews / totalReviews) * 100).toFixed(1) : '0.0'}%)`,
+      colorClass: 'bg-red-500',
+      icon: Frown, // Added icon
+    },
+    {
+      id: 'overall-polarity',
+      label: 'Overall Polarity',
+      value: avgPolarity,
+      description: `Average sentiment polarity: ${avgPolarity.toFixed(3)} (0 = neutral, +1 = very positive, -1 = very negative)`,
+      colorClass: 'bg-purple-500',
+      icon: MessageSquare, // Added icon
+    },
+  ];
 
   const tableColumns = [
     { key: 'App', label: 'App Name', sortable: true },
@@ -101,12 +191,12 @@ const SentimentPage: React.FC = () => {
 
   const reviewColumns = [
     { key: 'App', label: 'App', sortable: true },
-    { 
-      key: 'Translated_Review', 
-      label: 'Review', 
+    {
+      key: 'Translated_Review',
+      label: 'Review',
       sortable: false,
-      render: (value: string) => (
-        <div className="max-w-xs truncate" title={value}>
+      render: (value: string | undefined) => (
+        <div className="max-w-xs truncate" title={value || 'No review text'}>
           {value || 'No review text'}
         </div>
       )
@@ -135,13 +225,13 @@ const SentimentPage: React.FC = () => {
         />
         <StatsCard
           title="Positive Reviews"
-          value={`${((positiveReviews / totalReviews) * 100).toFixed(1)}%`}
+          value={totalReviews > 0 ? `${((positiveReviews / totalReviews) * 100).toFixed(1)}%` : '0.0%'}
           icon={Heart}
           color="green"
         />
         <StatsCard
           title="Negative Reviews"
-          value={`${((negativeReviews / totalReviews) * 100).toFixed(1)}%`}
+          value={totalReviews > 0 ? `${((negativeReviews / totalReviews) * 100).toFixed(1)}%` : '0.0%'}
           icon={Frown}
           color="red"
         />
@@ -159,12 +249,13 @@ const SentimentPage: React.FC = () => {
           data={sentimentDistribution}
           title="Overall Sentiment Distribution"
           height={400}
+          color="#EC4899"
         />
         <BarChartComponent
           data={sentimentByCategory}
           title="Average Sentiment by Category (Top 15)"
           height={400}
-          color="#EC4899"
+          color="#EF4444"
         />
       </div>
 
@@ -178,6 +269,9 @@ const SentimentPage: React.FC = () => {
           yAxisLabel="Average Sentiment Polarity"
           height={400}
           color="#8B5CF6"
+          // For this scatter plot, we usually want app ratings on X (0-5) and polarity on Y (-1 to +1)
+          // No specific xAxisDomain or yAxisDomain props passed here, letting Recharts auto-adjust based on data.
+          // If you need specific ranges, add them like: xAxisDomain={[0, 5]} yAxisDomain={[-1, 1]}
         />
       </div>
 
@@ -205,52 +299,11 @@ const SentimentPage: React.FC = () => {
         />
       </div>
 
-      {/* Insights */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Sentiment Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Positive Sentiment</p>
-                <p className="text-sm text-gray-600">
-                  {positiveReviews.toLocaleString()} positive reviews ({((positiveReviews / totalReviews) * 100).toFixed(1)}%)
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-pink-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Best Category Sentiment</p>
-                <p className="text-sm text-gray-600">
-                  {sentimentByCategory[0]?.name} has the highest sentiment polarity ({sentimentByCategory[0]?.value})
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-red-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Negative Sentiment</p>
-                <p className="text-sm text-gray-600">
-                  {negativeReviews.toLocaleString()} negative reviews ({((negativeReviews / totalReviews) * 100).toFixed(1)}%)
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Overall Polarity</p>
-                <p className="text-sm text-gray-600">
-                  Average sentiment polarity: {avgPolarity.toFixed(3)} (0 = neutral, +1 = very positive, -1 = very negative)
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Insights Card - now using the generic InsightsCard */}
+      <InsightsCard
+        title="Sentiment Insights"
+        insights={sentimentInsightsData}
+      />
     </div>
   );
 };

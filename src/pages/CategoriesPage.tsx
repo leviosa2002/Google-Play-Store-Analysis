@@ -1,9 +1,11 @@
+// src/pages/CategoriesPage.tsx
 import React from 'react';
 import { useData } from '../context/DataContext';
 import BarChartComponent from '../components/charts/BarChart';
 import PieChartComponent from '../components/charts/PieChart';
 import DataTable from '../components/DataTable';
 import StatsCard from '../components/StatsCard';
+import InsightsCard from '../components/InsightsCard'; // <-- Use the generic InsightsCard
 import { BarChart3, TrendingUp, Star, Smartphone } from 'lucide-react';
 import { getCategoryDistribution, parseInstalls, formatInstalls } from '../utils/dataTransformers';
 
@@ -20,14 +22,18 @@ const CategoriesPage: React.FC = () => {
 
   const categoryData = getCategoryDistribution(filteredApps);
   const topCategories = categoryData.slice(0, 10);
-  
+
   // Category performance metrics
   const categoryMetrics = categoryData.map(cat => {
     const categoryApps = filteredApps.filter(app => app.Category === cat.name);
-    const avgRating = categoryApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / categoryApps.length;
+    const avgRating = categoryApps.length > 0
+                      ? categoryApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / categoryApps.length
+                      : 0;
     const totalInstalls = categoryApps.reduce((sum, app) => sum + parseInstalls(app.Installs || '0'), 0);
     const freeAppsCount = categoryApps.filter(app => app.Type === 'Free').length;
-    const freePercentage = (freeAppsCount / categoryApps.length) * 100;
+    const freePercentage = categoryApps.length > 0
+                             ? (freeAppsCount / categoryApps.length) * 100
+                             : 0;
 
     return {
       Category: cat.name,
@@ -39,11 +45,47 @@ const CategoriesPage: React.FC = () => {
   });
 
   const totalCategories = categoryData.length;
-  const mostPopularCategory = categoryData[0];
-  const avgAppsPerCategory = filteredApps.length / totalCategories;
-  const highestRatedCategory = categoryMetrics.reduce((max, cat) => 
-    cat['Avg Rating'] > max['Avg Rating'] ? cat : max
-  );
+  const mostPopularCategory = categoryData.length > 0 ? categoryData[0] : null;
+
+  const avgAppsPerCategory = totalCategories > 0 ? filteredApps.length / totalCategories : 0;
+
+  const highestRatedCategory = categoryMetrics.length > 0
+    ? categoryMetrics.reduce((max, cat) =>
+        cat['Avg Rating'] > max['Avg Rating'] ? cat : max
+      )
+    : null;
+
+  // Prepare data for the generic InsightsCard for Categories Page
+  const categoryInsightsData = [
+    {
+      id: 'dominant-category',
+      label: 'Dominant Category',
+      value: mostPopularCategory?.name || 'N/A',
+      description: `${mostPopularCategory?.name || 'N/A'} leads with ${mostPopularCategory?.value || 'N/A'} apps`,
+      colorClass: 'bg-blue-500',
+    },
+    {
+      id: 'quality-leader',
+      label: 'Quality Leader',
+      value: highestRatedCategory?.['Avg Rating'] || 'N/A',
+      description: `${highestRatedCategory?.Category || 'N/A'} has the highest average rating (${highestRatedCategory?.['Avg Rating']?.toFixed(2) || 'N/A'})`,
+      colorClass: 'bg-green-500',
+    },
+    {
+      id: 'market-diversity',
+      label: 'Market Diversity',
+      value: totalCategories,
+      description: `${totalCategories} different categories represented in the store`,
+      colorClass: 'bg-purple-500',
+    },
+    {
+      id: 'avg-distribution',
+      label: 'Average Distribution',
+      value: avgAppsPerCategory,
+      description: `${avgAppsPerCategory.toFixed(0)} apps per category on average`,
+      colorClass: 'bg-orange-500',
+    },
+  ];
 
   const tableColumns = [
     { key: 'Category', label: 'Category', sortable: true },
@@ -54,16 +96,16 @@ const CategoriesPage: React.FC = () => {
   ];
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 to-blue-600 rounded-lg p-8 text-white">
+    <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
+      {/* Header - Already colorful and prominent */}
+      <div className="bg-gradient-to-r from-indigo-600 to-blue-600 rounded-lg p-8 text-white shadow-lg">
         <h1 className="text-3xl font-bold mb-2">Categories Analysis</h1>
         <p className="text-indigo-100">
           Comprehensive breakdown of app categories and their performance metrics
         </p>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - These already have colors from the 'color' prop */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Total Categories"
@@ -91,8 +133,8 @@ const CategoriesPage: React.FC = () => {
         />
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Charts Grid - Wrapped in a distinct white card with shadow */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 bg-white p-6 rounded-lg shadow-md border border-gray-100">
         <BarChartComponent
           data={topCategories}
           title="Top 10 Categories by App Count"
@@ -106,7 +148,7 @@ const CategoriesPage: React.FC = () => {
         />
       </div>
 
-      {/* Category Performance Table */}
+      {/* Category Performance Table - This component will need its internal styles adjusted for colors */}
       <DataTable
         data={categoryMetrics}
         columns={tableColumns}
@@ -114,52 +156,11 @@ const CategoriesPage: React.FC = () => {
         pageSize={15}
       />
 
-      {/* Insights */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Category Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Dominant Category</p>
-                <p className="text-sm text-gray-600">
-                  {mostPopularCategory?.name} leads with {mostPopularCategory?.value} apps
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Quality Leader</p>
-                <p className="text-sm text-gray-600">
-                  {highestRatedCategory?.Category} has the highest average rating ({highestRatedCategory?.['Avg Rating']})
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Market Diversity</p>
-                <p className="text-sm text-gray-600">
-                  {totalCategories} different categories represented in the store
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Average Distribution</p>
-                <p className="text-sm text-gray-600">
-                  {avgAppsPerCategory.toFixed(0)} apps per category on average
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Insights Card - now using the generic InsightsCard */}
+      <InsightsCard
+        title="Category Insights"
+        insights={categoryInsightsData}
+      />
     </div>
   );
 };

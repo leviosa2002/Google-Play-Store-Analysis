@@ -3,7 +3,49 @@ import { useData } from '../context/DataContext';
 import BarChartComponent from '../components/charts/BarChart';
 import DataTable from '../components/DataTable';
 import StatsCard from '../components/StatsCard';
-import { MessageSquare, ThumbsUp, ThumbsDown, TrendingUp } from 'lucide-react';
+// --- START CHANGES FOR INSIGHTS CARD ---
+// Import the InsightsCard component
+import InsightsCard from '../components/InsightsCard';
+// Import additional icons that might be useful for new insights
+import { MessageSquare, ThumbsUp, ThumbsDown, TrendingUp, Sparkles, AlertTriangle } from 'lucide-react';
+// --- END CHANGES FOR INSIGHTS CARD ---
+
+// --- START: Added Interfaces for better type safety (Crucial for the insights data structure) ---
+// These should ideally be in a shared types file (e.g., `src/types/data.ts`)
+interface ReviewData {
+  App: string;
+  Translated_Review: string | null;
+  Sentiment: 'Positive' | 'Negative' | 'Neutral';
+  Sentiment_Polarity: number | null;
+  Sentiment_Subjectivity: number | null;
+}
+
+interface AppData {
+  App: string;
+  Category: string;
+  Rating: number | null;
+  // Add other properties from your actual AppData if needed for calculations
+  // e.g., Reviews: number; Size: string;
+}
+
+interface AppReviewAnalysis {
+  App: string;
+  Category: string;
+  Rating: number | null;
+  'Review Count': number;
+  Positive: number;
+  Negative: number;
+  Neutral: number;
+  'Avg Polarity': number;
+  'Positive %': number;
+}
+
+interface CategorySentiment {
+  name: string;
+  value: number; // For percentage of positive reviews
+}
+// --- END: Added Interfaces ---
+
 
 const TopReviewsPage: React.FC = () => {
   const { filteredApps, filteredReviews, loading } = useData();
@@ -17,14 +59,14 @@ const TopReviewsPage: React.FC = () => {
     );
   }
 
-  // Filter reviews based on selected sentiment
-  const reviewsToShow = selectedSentiment === 'All' 
-    ? filteredReviews 
+  // Filter reviews based on selected sentiment (NO CHANGE)
+  const reviewsToShow = selectedSentiment === 'All'
+    ? filteredReviews
     : filteredReviews.filter(review => review.Sentiment === selectedSentiment);
 
-  // Top positive reviews (highest polarity)
+  // Top positive reviews (highest polarity) (NO CHANGE - assuming 'Review' key is handled by DataTable)
   const topPositiveReviews = filteredReviews
-    .filter(review => review.Sentiment === 'Positive' && review.Sentiment_Polarity > 0.5)
+    .filter(review => review.Sentiment === 'Positive' && (review.Sentiment_Polarity || 0) > 0.5)
     .sort((a, b) => (b.Sentiment_Polarity || 0) - (a.Sentiment_Polarity || 0))
     .slice(0, 20)
     .map(review => ({
@@ -35,9 +77,9 @@ const TopReviewsPage: React.FC = () => {
       Subjectivity: Number((review.Sentiment_Subjectivity || 0).toFixed(3))
     }));
 
-  // Top negative reviews (lowest polarity)
+  // Top negative reviews (lowest polarity) (NO CHANGE - assuming 'Review' key is handled by DataTable)
   const topNegativeReviews = filteredReviews
-    .filter(review => review.Sentiment === 'Negative' && review.Sentiment_Polarity < -0.1)
+    .filter(review => review.Sentiment === 'Negative' && (review.Sentiment_Polarity || 0) < -0.1)
     .sort((a, b) => (a.Sentiment_Polarity || 0) - (b.Sentiment_Polarity || 0))
     .slice(0, 20)
     .map(review => ({
@@ -48,9 +90,9 @@ const TopReviewsPage: React.FC = () => {
       Subjectivity: Number((review.Sentiment_Subjectivity || 0).toFixed(3))
     }));
 
-  // Most reviewed apps with sentiment breakdown
-  const appReviewAnalysis = filteredApps.map(app => {
-    const appReviews = filteredReviews.filter(review => review.App === app.App);
+  // Most reviewed apps with sentiment breakdown (NO CHANGE)
+  const appReviewAnalysis: AppReviewAnalysis[] = filteredApps.map((app: AppData) => {
+    const appReviews = filteredReviews.filter((review: ReviewData) => review.App === app.App);
     if (appReviews.length === 0) return null;
 
     const positiveCount = appReviews.filter(r => r.Sentiment === 'Positive').length;
@@ -69,39 +111,109 @@ const TopReviewsPage: React.FC = () => {
       'Avg Polarity': Number(avgPolarity.toFixed(3)),
       'Positive %': Number(((positiveCount / appReviews.length) * 100).toFixed(1))
     };
-  }).filter(Boolean).sort((a, b) => (b?.['Review Count'] || 0) - (a?.['Review Count'] || 0)).slice(0, 50);
+  }).filter((app): app is AppReviewAnalysis => app !== null) // Added type guard
+    .sort((a, b) => (b['Review Count'] || 0) - (a['Review Count'] || 0)).slice(0, 50);
 
-  // Sentiment distribution by app category
-  const categories = [...new Set(filteredApps.map(app => app.Category))];
-  const sentimentByCategory = categories.map(category => {
-    const categoryApps = filteredApps.filter(app => app.Category === category);
-    const categoryReviews = filteredReviews.filter(review => 
+  // Sentiment distribution by app category (NO CHANGE)
+  const categories = [...new Set(filteredApps.map((app: AppData) => app.Category))];
+  const sentimentByCategory: CategorySentiment[] = categories.map(category => {
+    const categoryApps = filteredApps.filter((app: AppData) => app.Category === category);
+    const categoryReviews = filteredReviews.filter((review: ReviewData) =>
       categoryApps.some(app => app.App === review.App)
     );
-    
+
     if (categoryReviews.length === 0) return null;
-    
+
     const positiveCount = categoryReviews.filter(r => r.Sentiment === 'Positive').length;
     const positivePercentage = (positiveCount / categoryReviews.length) * 100;
-    
+
     return {
       name: category,
       value: Number(positivePercentage.toFixed(1))
     };
-  }).filter(Boolean).sort((a, b) => (b?.value || 0) - (a?.value || 0)).slice(0, 15);
+  }).filter((cat): cat is CategorySentiment => cat !== null) // Added type guard
+    .sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 15);
 
-  // Statistics
+  // Statistics (NO CHANGE, but added check for totalReviews > 0 to prevent NaN for avgPolarity)
   const totalReviews = filteredReviews.length;
   const positiveReviews = filteredReviews.filter(r => r.Sentiment === 'Positive').length;
   const negativeReviews = filteredReviews.filter(r => r.Sentiment === 'Negative').length;
   const neutralReviews = filteredReviews.filter(r => r.Sentiment === 'Neutral').length;
-  const avgPolarity = filteredReviews.reduce((sum, r) => sum + (r.Sentiment_Polarity || 0), 0) / totalReviews;
+  const avgPolarity = totalReviews > 0 ? filteredReviews.reduce((sum, r) => sum + (r.Sentiment_Polarity || 0), 0) / totalReviews : 0;
 
+  // --- START CHANGES FOR INSIGHTS CARD DATA PREPARATION ---
+  // Get most and least positive categories for insights, handling empty array
+  const mostPositiveCategory = sentimentByCategory.length > 0 ? sentimentByCategory[0] : null;
+  const leastPositiveCategory = sentimentByCategory.length > 0 ? sentimentByCategory[sentimentByCategory.length - 1] : null;
+
+  // Data for the InsightsCard component
+  const reviewInsightsData = [
+    {
+      id: 'total-reviews-insight',
+      label: 'Total Reviews Analyzed',
+      value: totalReviews.toLocaleString(),
+      description: `All insights are based on a dataset of ${totalReviews.toLocaleString()} user reviews.`,
+      colorClass: 'bg-blue-500',
+      icon: MessageSquare,
+    },
+    {
+      id: 'positive-sentiment-share',
+      label: 'Overall Positive Sentiment',
+      value: totalReviews > 0 ? `${((positiveReviews / totalReviews) * 100).toFixed(1)}%` : '0.0%',
+      description: `A significant portion of user feedback expresses positive sentiment.`,
+      colorClass: 'bg-green-500',
+      icon: ThumbsUp,
+    },
+    {
+      id: 'negative-sentiment-share',
+      label: 'Overall Negative Sentiment',
+      value: totalReviews > 0 ? `${((negativeReviews / totalReviews) * 100).toFixed(1)}%` : '0.0%',
+      description: `Identify key areas for improvement from negative user experiences.`,
+      colorClass: 'bg-red-500',
+      icon: ThumbsDown,
+    },
+    {
+      id: 'average-polarity',
+      label: 'Average Review Polarity',
+      value: avgPolarity.toFixed(3),
+      description: `The average sentiment score across all reviews (range: -1 to +1).`,
+      colorClass: 'bg-purple-500',
+      icon: TrendingUp,
+    },
+    {
+      id: 'top-positive-category',
+      label: 'Leading Positive Category',
+      value: mostPositiveCategory?.name || 'N/A',
+      description: `${mostPositiveCategory?.name || 'No data'} holds the highest positive sentiment at ${mostPositiveCategory?.value ?? '0.0'}%.`,
+      colorClass: 'bg-rose-500',
+      icon: Sparkles, // Using a new icon from lucide-react
+    },
+    {
+      id: 'lowest-positive-category',
+      label: 'Lowest Positive Category',
+      value: leastPositiveCategory?.name || 'N/A',
+      description: `${leastPositiveCategory?.name || 'No data'} shows the lowest positive sentiment at ${leastPositiveCategory?.value ?? '0.0'}%.`,
+      colorClass: 'bg-orange-500',
+      icon: AlertTriangle, // Using a new icon from lucide-react
+    },
+    {
+      id: 'most-active-app',
+      label: 'Most Reviewed Application',
+      value: appReviewAnalysis.length > 0 ? appReviewAnalysis[0].App : 'N/A',
+      description: `"${appReviewAnalysis.length > 0 ? appReviewAnalysis[0].App : 'No data'}" has received the most user reviews (${appReviewAnalysis.length > 0 ? appReviewAnalysis[0]['Review Count'].toLocaleString() : '0'}).`,
+      colorClass: 'bg-indigo-500',
+      icon: MessageSquare,
+    },
+  ];
+  // --- END CHANGES FOR INSIGHTS CARD DATA PREPARATION ---
+
+
+  // reviewColumns (NO CHANGE)
   const reviewColumns = [
     { key: 'App', label: 'App', sortable: true },
-    { 
-      key: 'Review', 
-      label: 'Review Text', 
+    {
+      key: 'Review',
+      label: 'Review Text',
       sortable: false,
       render: (value: string) => (
         <div className="max-w-md">
@@ -111,9 +223,9 @@ const TopReviewsPage: React.FC = () => {
         </div>
       )
     },
-    { 
-      key: 'Sentiment', 
-      label: 'Sentiment', 
+    {
+      key: 'Sentiment',
+      label: 'Sentiment',
       sortable: true,
       render: (value: string) => (
         <span className={`px-2 py-1 text-xs rounded-full ${
@@ -129,6 +241,7 @@ const TopReviewsPage: React.FC = () => {
     { key: 'Subjectivity', label: 'Subjectivity', sortable: true }
   ];
 
+  // appAnalysisColumns (NO CHANGE)
   const appAnalysisColumns = [
     { key: 'App', label: 'App Name', sortable: true },
     { key: 'Category', label: 'Category', sortable: true },
@@ -142,7 +255,7 @@ const TopReviewsPage: React.FC = () => {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
+      {/* Header (NO CHANGE) */}
       <div className="bg-gradient-to-r from-rose-600 to-pink-600 rounded-lg p-8 text-white">
         <h1 className="text-3xl font-bold mb-2">Top Reviews Analysis</h1>
         <p className="text-rose-100">
@@ -150,7 +263,7 @@ const TopReviewsPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards (NO CHANGE) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Total Reviews"
@@ -160,13 +273,13 @@ const TopReviewsPage: React.FC = () => {
         />
         <StatsCard
           title="Positive Reviews"
-          value={`${((positiveReviews / totalReviews) * 100).toFixed(1)}%`}
+          value={totalReviews > 0 ? `${((positiveReviews / totalReviews) * 100).toFixed(1)}%` : '0.0%'}
           icon={ThumbsUp}
           color="green"
         />
         <StatsCard
           title="Negative Reviews"
-          value={`${((negativeReviews / totalReviews) * 100).toFixed(1)}%`}
+          value={totalReviews > 0 ? `${((negativeReviews / totalReviews) * 100).toFixed(1)}%` : '0.0%'}
           icon={ThumbsDown}
           color="red"
         />
@@ -178,7 +291,7 @@ const TopReviewsPage: React.FC = () => {
         />
       </div>
 
-      {/* Sentiment Filter */}
+      {/* Sentiment Filter (NO CHANGE) */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         <div className="flex items-center space-x-4">
           <label className="text-sm font-medium text-gray-700">Filter by Sentiment:</label>
@@ -198,7 +311,7 @@ const TopReviewsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Charts */}
+      {/* Charts (NO CHANGE) */}
       <div className="grid grid-cols-1 gap-6">
         <BarChartComponent
           data={sentimentByCategory}
@@ -208,7 +321,7 @@ const TopReviewsPage: React.FC = () => {
         />
       </div>
 
-      {/* App Review Analysis */}
+      {/* App Review Analysis (NO CHANGE) */}
       <DataTable
         data={appReviewAnalysis}
         columns={appAnalysisColumns}
@@ -216,7 +329,7 @@ const TopReviewsPage: React.FC = () => {
         pageSize={15}
       />
 
-      {/* Top Reviews Tables */}
+      {/* Top Reviews Tables (NO CHANGE) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DataTable
           data={topPositiveReviews}
@@ -232,52 +345,13 @@ const TopReviewsPage: React.FC = () => {
         />
       </div>
 
-      {/* Insights */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Review Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Positive Sentiment</p>
-                <p className="text-sm text-gray-600">
-                  {positiveReviews.toLocaleString()} positive reviews ({((positiveReviews / totalReviews) * 100).toFixed(1)}%)
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-rose-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Most Positive Category</p>
-                <p className="text-sm text-gray-600">
-                  {sentimentByCategory[0]?.name} has {sentimentByCategory[0]?.value}% positive reviews
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-red-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Negative Sentiment</p>
-                <p className="text-sm text-gray-600">
-                  {negativeReviews.toLocaleString()} negative reviews ({((negativeReviews / totalReviews) * 100).toFixed(1)}%)
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Overall Sentiment</p>
-                <p className="text-sm text-gray-600">
-                  Average polarity: {avgPolarity.toFixed(3)} (range: -1 to +1)
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* --- START REPLACEMENT OF MANUAL INSIGHTS DIV WITH INSIGHTSCARD --- */}
+      {/* Original Insights div removed and replaced with InsightsCard */}
+      <InsightsCard
+        title="Key Review Insights"
+        insights={reviewInsightsData}
+      />
+      {/* --- END REPLACEMENT --- */}
     </div>
   );
 };

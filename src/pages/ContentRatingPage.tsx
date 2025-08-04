@@ -4,6 +4,7 @@ import BarChartComponent from '../components/charts/BarChart';
 import PieChartComponent from '../components/charts/PieChart';
 import DataTable from '../components/DataTable';
 import StatsCard from '../components/StatsCard';
+import InsightsCard from '../components/InsightsCard'; // <--- Import InsightsCard
 import { Shield, Users, Star, BarChart3 } from 'lucide-react';
 import { getContentRatingDistribution, parseInstalls, formatInstalls } from '../utils/dataTransformers';
 
@@ -19,15 +20,15 @@ const ContentRatingPage: React.FC = () => {
   }
 
   const contentRatingDistribution = getContentRatingDistribution(filteredApps);
-  
+
   // Content rating performance analysis
   const contentRatingAnalysis = contentRatingDistribution.map(rating => {
     const ratingApps = filteredApps.filter(app => app['Content Rating'] === rating.name);
-    const avgRating = ratingApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / ratingApps.length;
+    const avgRating = ratingApps.length > 0 ? ratingApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / ratingApps.length : 0;
     const totalInstalls = ratingApps.reduce((sum, app) => sum + parseInstalls(app.Installs || '0'), 0);
     const freeApps = ratingApps.filter(app => app.Type === 'Free').length;
-    const freePercentage = (freeApps / ratingApps.length) * 100;
-    const avgReviews = ratingApps.reduce((sum, app) => sum + (app.Reviews || 0), 0) / ratingApps.length;
+    const freePercentage = ratingApps.length > 0 ? (freeApps / ratingApps.length) * 100 : 0;
+    const avgReviews = ratingApps.length > 0 ? ratingApps.reduce((sum, app) => sum + (app.Reviews || 0), 0) / ratingApps.length : 0;
 
     return {
       'Content Rating': rating.name,
@@ -54,10 +55,10 @@ const ContentRatingPage: React.FC = () => {
   // Top apps by content rating
   const topAppsByRating = ['Everyone', 'Teen', 'Mature 17+', 'Adults only 18+'].map(rating => {
     const ratingApps = filteredApps
-      .filter(app => app['Content Rating'] === rating && app.Rating >= 4.0)
-      .sort((a, b) => b.Rating - a.Rating)
+      .filter(app => app['Content Rating'] === rating && (app.Rating || 0) >= 4.0)
+      .sort((a, b) => (b.Rating || 0) - (a.Rating || 0))
       .slice(0, 5);
-    
+
     return {
       rating,
       apps: ratingApps.map(app => ({
@@ -70,12 +71,44 @@ const ContentRatingPage: React.FC = () => {
     };
   }).filter(group => group.apps.length > 0);
 
-  // Statistics
+  // Statistics for StatsCards and InsightsCard
   const totalApps = filteredApps.length;
   const everyoneApps = filteredApps.filter(app => app['Content Rating'] === 'Everyone').length;
   const teenApps = filteredApps.filter(app => app['Content Rating'] === 'Teen').length;
   const matureApps = filteredApps.filter(app => app['Content Rating']?.includes('Mature')).length;
   const mostCommonRating = contentRatingDistribution[0];
+
+  // Prepare data for the InsightsCard
+  const contentRatingInsights = [
+    {
+      id: 'family-friendly-dominance',
+      label: 'Family-Friendly Dominance',
+      value: `${totalApps > 0 ? ((everyoneApps / totalApps) * 100).toFixed(1) : '0.0'}%`,
+      description: `${(totalApps > 0 ? ((everyoneApps / totalApps) * 100).toFixed(1) : '0.0')}% of apps are rated "Everyone"`,
+      colorClass: 'bg-green-500',
+    },
+    {
+      id: 'best-performing-rating',
+      label: 'Best Performing Rating',
+      value: `${ratingByContentRating[0]?.name || 'N/A'}`,
+      description: `${ratingByContentRating[0]?.name || 'N/A'} apps have the highest average rating (${ratingByContentRating[0]?.value || 'N/A'})`,
+      colorClass: 'bg-blue-500',
+    },
+    {
+      id: 'teen-market',
+      label: 'Teen Market',
+      value: `${totalApps > 0 ? ((teenApps / totalApps) * 100).toFixed(1) : '0.0'}%`,
+      description: `${(totalApps > 0 ? ((teenApps / totalApps) * 100).toFixed(1) : '0.0')}% of apps target teen audiences`,
+      colorClass: 'bg-orange-500',
+    },
+    {
+      id: 'market-distribution',
+      label: 'Market Distribution',
+      value: `${contentRatingDistribution.length}`,
+      description: `${contentRatingDistribution.length} different content rating categories`,
+      colorClass: 'bg-purple-500',
+    },
+  ];
 
   const tableColumns = [
     { key: 'Content Rating', label: 'Content Rating', sortable: true },
@@ -108,19 +141,19 @@ const ContentRatingPage: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Everyone Rated"
-          value={`${((everyoneApps / totalApps) * 100).toFixed(1)}%`}
+          value={`${totalApps > 0 ? ((everyoneApps / totalApps) * 100).toFixed(1) : '0.0'}%`}
           icon={Users}
           color="green"
         />
         <StatsCard
           title="Teen Rated"
-          value={`${((teenApps / totalApps) * 100).toFixed(1)}%`}
+          value={`${totalApps > 0 ? ((teenApps / totalApps) * 100).toFixed(1) : '0.0'}%`}
           icon={Shield}
           color="blue"
         />
         <StatsCard
           title="Mature Rated"
-          value={`${((matureApps / totalApps) * 100).toFixed(1)}%`}
+          value={`${totalApps > 0 ? ((matureApps / totalApps) * 100).toFixed(1) : '0.0'}%`}
           icon={Star}
           color="orange"
         />
@@ -172,51 +205,12 @@ const ContentRatingPage: React.FC = () => {
       </div>
 
       {/* Insights */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Content Rating Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Family-Friendly Dominance</p>
-                <p className="text-sm text-gray-600">
-                  {((everyoneApps / totalApps) * 100).toFixed(1)}% of apps are rated "Everyone"
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Best Performing Rating</p>
-                <p className="text-sm text-gray-600">
-                  {ratingByContentRating[0]?.name} apps have the highest average rating ({ratingByContentRating[0]?.value})
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Teen Market</p>
-                <p className="text-sm text-gray-600">
-                  {((teenApps / totalApps) * 100).toFixed(1)}% of apps target teen audiences
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Market Distribution</p>
-                <p className="text-sm text-gray-600">
-                  {contentRatingDistribution.length} different content rating categories
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Replaced the manual insight div with InsightsCard */}
+      <InsightsCard
+        title="Content Rating Insights"
+        insights={contentRatingInsights}
+      />
+
     </div>
   );
 };

@@ -3,8 +3,27 @@ import { useData } from '../context/DataContext';
 import BarChartComponent from '../components/charts/BarChart';
 import ScatterPlot from '../components/charts/ScatterPlot';
 import StatsCard from '../components/StatsCard';
+import InsightsCard from '../components/InsightsCard'; // Import InsightsCard
 import { HardDrive, Zap, Star, BarChart3 } from 'lucide-react';
 import { parseSize, formatSize } from '../utils/dataTransformers';
+
+// Define an interface for your App data structure to improve type safety
+// This should ideally come from a central types file, e.g., src/types/data.ts
+interface AppData {
+  App: string;
+  Category: string;
+  Rating: number | null; // Rating can be null or NaN in raw data
+  Reviews: number;
+  Size: string; // e.g., '15M', '2.4G', 'Varies with device'
+  Installs: string;
+  Type: string;
+  Price: string;
+  'Content Rating': string;
+  Genres: string;
+  'Last Updated': string;
+  'Current Ver': string;
+  'Android Ver': string;
+}
 
 const SizePerformancePage: React.FC = () => {
   const { filteredApps, loading } = useData();
@@ -18,7 +37,8 @@ const SizePerformancePage: React.FC = () => {
   }
 
   // Filter apps with valid size data
-  const appsWithSize = filteredApps.filter(app => 
+  // Ensure the filtered apps are typed correctly
+  const appsWithSize: AppData[] = filteredApps.filter((app: AppData) =>
     app.Size && app.Size !== 'Varies with device' && parseSize(app.Size) > 0
   );
 
@@ -34,7 +54,7 @@ const SizePerformancePage: React.FC = () => {
 
   const sizeDistribution = sizeBins.map(bin => ({
     name: bin.range,
-    value: appsWithSize.filter(app => {
+    value: appsWithSize.filter((app: AppData) => {
       const size = parseSize(app.Size);
       return size >= bin.min && size < bin.max;
     }).length
@@ -42,49 +62,99 @@ const SizePerformancePage: React.FC = () => {
 
   // Size vs Rating correlation
   const sizeRatingData = appsWithSize
-    .filter(app => app.Rating > 0)
-    .map(app => ({
+    .filter((app: AppData) => (app.Rating !== null && !isNaN(app.Rating) && app.Rating > 0))
+    .map((app: AppData) => ({
       size: parseSize(app.Size),
-      rating: app.Rating,
+      rating: app.Rating!, // Use non-null assertion as we filtered above
       name: app.App
     }))
-    .slice(0, 500);
+    .slice(0, 500); // Limit data points for performance
 
   // Size vs Reviews correlation
   const sizeReviewsData = appsWithSize
-    .filter(app => app.Reviews > 0)
-    .map(app => ({
+    .filter((app: AppData) => app.Reviews > 0)
+    .map((app: AppData) => ({
       size: parseSize(app.Size),
       reviews: app.Reviews,
       name: app.App
     }))
-    .slice(0, 500);
+    .slice(0, 500); // Limit data points for performance
 
-  // Calculate stats
-  const averageSize = appsWithSize.reduce((sum, app) => sum + parseSize(app.Size), 0) / appsWithSize.length;
-  const largestApp = appsWithSize.reduce((max, app) => 
-    parseSize(app.Size) > parseSize(max.Size) ? app : max
-  );
-  const smallestApp = appsWithSize.reduce((min, app) => 
-    parseSize(app.Size) < parseSize(min.Size) ? app : min
-  );
+  // Calculate stats, handling empty arrays
+  const averageSize = appsWithSize.length > 0
+    ? appsWithSize.reduce((sum, app) => sum + parseSize(app.Size), 0) / appsWithSize.length
+    : 0;
+
+  // Type largestApp and smallestApp directly as AppData or null
+  const largestApp: AppData | null = appsWithSize.length > 0
+    ? appsWithSize.reduce((max, app) =>
+        parseSize(app.Size) > parseSize(max.Size) ? app : max
+      )
+    : null;
+
+  const smallestApp: AppData | null = appsWithSize.length > 0
+    ? appsWithSize.reduce((min, app) =>
+        parseSize(app.Size) < parseSize(min.Size) ? app : min
+      )
+    : null;
 
   // Correlation between size and rating
   const avgRatingBySize = sizeBins.map(bin => {
-    const appsInBin = appsWithSize.filter(app => {
+    const appsInBin = appsWithSize.filter((app: AppData) => {
       const size = parseSize(app.Size);
-      return size >= bin.min && size < bin.max && app.Rating > 0;
+      return size >= bin.min && size < bin.max && (app.Rating !== null && !isNaN(app.Rating) && app.Rating > 0);
     });
-    
-    const avgRating = appsInBin.length > 0 
-      ? appsInBin.reduce((sum, app) => sum + app.Rating, 0) / appsInBin.length 
+
+    const avgRating = appsInBin.length > 0
+      ? appsInBin.reduce((sum, app) => sum + app.Rating!, 0) / appsInBin.length
       : 0;
-    
+
     return {
       name: bin.range,
       value: Number(avgRating.toFixed(2))
     };
   }).filter(item => item.value > 0);
+
+  // Prepare data for the generic InsightsCard
+  const mostCommonSizeRange = sizeDistribution.length > 0
+    ? sizeDistribution.reduce((max, current) => current.value > max.value ? current : max)
+    : { name: 'N/A', value: 0 };
+
+  const bestRatedSizeRange = avgRatingBySize.length > 0
+    ? avgRatingBySize.reduce((max, current) => current.value > max.value ? current : max)
+    : { name: 'N/A', value: 0 };
+
+  const sizePerformanceInsights = [
+    {
+      id: 'most-common-size',
+      label: 'Most Common Size Range',
+      value: mostCommonSizeRange.value,
+      description: `${mostCommonSizeRange.name} contains the most apps`,
+      colorClass: 'bg-purple-500',
+    },
+    {
+      id: 'size-extremes',
+      label: 'Size Extremes',
+      value: 'N/A', // Placeholder, actual values in description
+      description: `Range from ${formatSize(parseSize(smallestApp?.Size || '0'))} to ${formatSize(parseSize(largestApp?.Size || '0'))}`,
+      colorClass: 'bg-pink-500',
+    },
+    {
+      id: 'best-rated-size',
+      label: 'Best Rated Size Range',
+      value: bestRatedSizeRange.value,
+      description: `${bestRatedSizeRange.name} has the highest average rating`,
+      colorClass: 'bg-blue-500',
+    },
+    {
+      id: 'apps-analyzed',
+      label: 'Apps with Size Data',
+      value: appsWithSize.length,
+      description: `${appsWithSize.length.toLocaleString()} apps analyzed for size-performance correlation`,
+      colorClass: 'bg-green-500',
+    },
+  ];
+
 
   return (
     <div className="p-6 space-y-6">
@@ -163,56 +233,11 @@ const SizePerformancePage: React.FC = () => {
         />
       </div>
 
-      {/* Insights */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Size Performance Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Most Common Size Range</p>
-                <p className="text-sm text-gray-600">
-                  {sizeDistribution.reduce((max, current) => 
-                    current.value > max.value ? current : max
-                  ).name} contains the most apps
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-pink-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Size Extremes</p>
-                <p className="text-sm text-gray-600">
-                  Range from {formatSize(parseSize(smallestApp?.Size || '0'))} to {formatSize(parseSize(largestApp?.Size || '0'))}
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Best Rated Size Range</p>
-                <p className="text-sm text-gray-600">
-                  {avgRatingBySize.reduce((max, current) => 
-                    current.value > max.value ? current : max, { name: 'N/A', value: 0 }
-                  ).name} has highest average rating
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Size Impact</p>
-                <p className="text-sm text-gray-600">
-                  {appsWithSize.length} apps analyzed for size-performance correlation
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Insights Card - using the generic InsightsCard */}
+      <InsightsCard
+        title="Size Performance Insights"
+        insights={sizePerformanceInsights}
+      />
     </div>
   );
 };

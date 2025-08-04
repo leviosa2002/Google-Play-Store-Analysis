@@ -5,6 +5,7 @@ import PieChartComponent from '../components/charts/PieChart';
 import ScatterPlot from '../components/charts/ScatterPlot';
 import DataTable from '../components/DataTable';
 import StatsCard from '../components/StatsCard';
+import InsightsCard from '../components/InsightsCard'; // <--- Import InsightsCard
 import { Star, TrendingUp, Award, BarChart3 } from 'lucide-react';
 import { getRatingDistribution, parseInstalls, formatInstalls } from '../utils/dataTransformers';
 
@@ -20,12 +21,12 @@ const RatingsPage: React.FC = () => {
   }
 
   const ratingDistribution = getRatingDistribution(filteredApps);
-  
+
   // Rating vs Installs correlation
   const ratingInstallsData = filteredApps
-    .filter(app => app.Rating > 0 && parseInstalls(app.Installs || '0') > 0)
+    .filter(app => (app.Rating || 0) > 0 && parseInstalls(app.Installs || '0') > 0)
     .map(app => ({
-      rating: app.Rating,
+      rating: app.Rating || 0,
       installs: parseInstalls(app.Installs || '0'),
       name: app.App
     }))
@@ -33,8 +34,8 @@ const RatingsPage: React.FC = () => {
 
   // Top rated apps
   const topRatedApps = filteredApps
-    .filter(app => app.Rating >= 4.0 && app.Reviews >= 100)
-    .sort((a, b) => b.Rating - a.Rating)
+    .filter(app => (app.Rating || 0) >= 4.0 && (app.Reviews || 0) >= 100)
+    .sort((a, b) => (b.Rating || 0) - (a.Rating || 0))
     .slice(0, 20)
     .map(app => ({
       App: app.App,
@@ -46,22 +47,59 @@ const RatingsPage: React.FC = () => {
     }));
 
   // Rating statistics
-  const validRatings = filteredApps.filter(app => app.Rating > 0);
-  const averageRating = validRatings.reduce((sum, app) => sum + app.Rating, 0) / validRatings.length;
-  const highestRating = Math.max(...validRatings.map(app => app.Rating));
-  const appsAbove4 = validRatings.filter(app => app.Rating >= 4.0).length;
-  const percentageAbove4 = (appsAbove4 / validRatings.length) * 100;
+  const validRatings = filteredApps.filter(app => (app.Rating || 0) > 0);
+  const averageRating = validRatings.length > 0 ? validRatings.reduce((sum, app) => sum + (app.Rating || 0), 0) / validRatings.length : 0;
+  const highestRating = validRatings.length > 0 ? Math.max(...validRatings.map(app => (app.Rating || 0))) : 0;
+  const appsAbove4 = validRatings.filter(app => (app.Rating || 0) >= 4.0).length;
+  const percentageAbove4 = validRatings.length > 0 ? (appsAbove4 / validRatings.length) * 100 : 0;
 
   // Rating by category
   const categories = [...new Set(filteredApps.map(app => app.Category))];
   const ratingByCategory = categories.map(category => {
-    const categoryApps = filteredApps.filter(app => app.Category === category && app.Rating > 0);
-    const avgRating = categoryApps.reduce((sum, app) => sum + app.Rating, 0) / categoryApps.length;
+    const categoryApps = filteredApps.filter(app => app.Category === category && (app.Rating || 0) > 0);
+    const avgRating = categoryApps.length > 0 ? categoryApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / categoryApps.length : 0;
     return {
       name: category,
       value: Number(avgRating.toFixed(2))
     };
   }).sort((a, b) => b.value - a.value).slice(0, 15);
+
+
+  // Prepare data for the InsightsCard
+  const ratingInsights = [
+    {
+      id: 'quality-standard',
+      label: 'Quality Standard',
+      value: `${percentageAbove4.toFixed(1)}%`,
+      description: `${percentageAbove4.toFixed(1)}% of apps maintain ratings above 4.0 stars`,
+      colorClass: 'bg-orange-500',
+    },
+    {
+      id: 'best-category',
+      label: 'Best Category',
+      value: ratingByCategory[0]?.name || 'N/A',
+      description: `${ratingByCategory[0]?.name || 'N/A'} leads with ${ratingByCategory[0]?.value || 'N/A'} average rating`,
+      colorClass: 'bg-green-500',
+    },
+    {
+      id: 'rating-range',
+      label: 'Rating Range',
+      value: ratingDistribution.length > 0 ? ratingDistribution.reduce((max, current) =>
+        current.value > max.value ? current : max
+      ).name : 'N/A',
+      description: ratingDistribution.length > 0 ? `Most common rating range: ${ratingDistribution.reduce((max, current) =>
+        current.value > max.value ? current : max
+      ).name}` : 'No data available',
+      colorClass: 'bg-blue-500',
+    },
+    {
+      id: 'market-average',
+      label: 'Market Average',
+      value: averageRating.toFixed(2),
+      description: `Overall market average: ${averageRating.toFixed(2)} out of 5.0 stars`,
+      colorClass: 'bg-purple-500',
+    },
+  ];
 
   const tableColumns = [
     { key: 'App', label: 'App Name', sortable: true },
@@ -152,54 +190,11 @@ const RatingsPage: React.FC = () => {
         pageSize={20}
       />
 
-      {/* Insights */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Rating Insights</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Quality Standard</p>
-                <p className="text-sm text-gray-600">
-                  {percentageAbove4.toFixed(1)}% of apps maintain ratings above 4.0 stars
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Best Category</p>
-                <p className="text-sm text-gray-600">
-                  {ratingByCategory[0]?.name} leads with {ratingByCategory[0]?.value} average rating
-                </p>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Rating Range</p>
-                <p className="text-sm text-gray-600">
-                  Most common rating range: {ratingDistribution.reduce((max, current) => 
-                    current.value > max.value ? current : max
-                  ).name}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-start space-x-3">
-              <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-              <div>
-                <p className="font-medium text-gray-900">Market Average</p>
-                <p className="text-sm text-gray-600">
-                  Overall market average: {averageRating.toFixed(2)} out of 5.0 stars
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Insights - Now using InsightsCard */}
+      <InsightsCard
+        title="Rating Insights"
+        insights={ratingInsights}
+      />
     </div>
   );
 };

@@ -4,19 +4,20 @@ import BarChartComponent from '../components/charts/BarChart';
 import PieChartComponent from '../components/charts/PieChart';
 import ScatterPlot from '../components/charts/ScatterPlot';
 import StatsCard from '../components/StatsCard';
-import { 
-  FileText, 
-  BarChart3, 
-  TrendingUp, 
-  Star, 
-  Download, 
+import InsightsCard from '../components/InsightsCard'; // <--- Import InsightsCard
+import {
+  FileText,
+  BarChart3,
+  TrendingUp,
+  Star,
+  Download,
   MessageSquare,
   Smartphone,
   Calendar
 } from 'lucide-react';
-import { 
-  getCategoryDistribution, 
-  getRatingDistribution, 
+import {
+  getCategoryDistribution,
+  getRatingDistribution,
   getSentimentDistribution,
   getInstallsDistribution,
   getContentRatingDistribution,
@@ -38,7 +39,7 @@ const ComprehensiveReportPage: React.FC = () => {
   // Key metrics
   const totalApps = filteredApps.length;
   const totalReviews = filteredReviews.length;
-  const averageRating = filteredApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / totalApps;
+  const averageRating = totalApps > 0 ? filteredApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / totalApps : 0;
   const totalInstalls = filteredApps.reduce((sum, app) => sum + parseInstalls(app.Installs || '0'), 0);
   const freeApps = filteredApps.filter(app => app.Type === 'Free').length;
   const paidApps = filteredApps.filter(app => app.Type === 'Paid').length;
@@ -52,8 +53,8 @@ const ComprehensiveReportPage: React.FC = () => {
 
   // Top performers
   const topRatedApps = filteredApps
-    .filter(app => app.Rating >= 4.5 && app.Reviews >= 1000)
-    .sort((a, b) => b.Rating - a.Rating)
+    .filter(app => (app.Rating || 0) >= 4.5 && (app.Reviews || 0) >= 1000)
+    .sort((a, b) => (b.Rating || 0) - (a.Rating || 0))
     .slice(0, 5);
 
   const topInstalledApps = filteredApps
@@ -64,7 +65,7 @@ const ComprehensiveReportPage: React.FC = () => {
   const categories = [...new Set(filteredApps.map(app => app.Category))];
   const avgRatingByCategory = categories.map(category => {
     const categoryApps = filteredApps.filter(app => app.Category === category);
-    const avgRating = categoryApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / categoryApps.length;
+    const avgRating = categoryApps.length > 0 ? categoryApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / categoryApps.length : 0;
     return { category, avgRating, appCount: categoryApps.length };
   }).sort((a, b) => b.avgRating - a.avgRating);
 
@@ -72,7 +73,7 @@ const ComprehensiveReportPage: React.FC = () => {
   const positiveReviews = filteredReviews.filter(r => r.Sentiment === 'Positive').length;
   const negativeReviews = filteredReviews.filter(r => r.Sentiment === 'Negative').length;
   const neutralReviews = filteredReviews.filter(r => r.Sentiment === 'Neutral').length;
-  const avgSentimentPolarity = filteredReviews.reduce((sum, r) => sum + (r.Sentiment_Polarity || 0), 0) / totalReviews;
+  const avgSentimentPolarity = totalReviews > 0 ? filteredReviews.reduce((sum, r) => sum + (r.Sentiment_Polarity || 0), 0) / totalReviews : 0;
 
   // Update recency analysis
   const appsWithDates = filteredApps.filter(app => {
@@ -85,9 +86,42 @@ const ComprehensiveReportPage: React.FC = () => {
   const recentlyUpdated = appsWithDates.filter(app => new Date(app['Last Updated']) >= sixMonthsAgo).length;
 
   // Size analysis
-  const appsWithSize = filteredApps.filter(app => 
+  const appsWithSize = filteredApps.filter(app =>
     app.Size && app.Size !== 'Varies with device' && !isNaN(parseFloat(app.Size))
   );
+
+  // Prepare data for the InsightsCard for 'Market Statistics'
+  const marketStatisticsInsights = [
+    {
+      id: 'free-paid-apps',
+      label: 'Free vs Paid Apps',
+      value: `${totalApps > 0 ? ((freeApps / totalApps) * 100).toFixed(1) : '0.0'}% Free`,
+      description: `Out of ${totalApps.toLocaleString()} apps, ${freeApps.toLocaleString()} are free.`,
+      colorClass: 'bg-blue-500', // Corresponding to the original blue
+    },
+    {
+      id: 'apps-4plus-rating',
+      label: 'Apps with 4+ Rating',
+      value: `${totalApps > 0 ? ((filteredApps.filter(app => (app.Rating || 0) >= 4.0).length / totalApps) * 100).toFixed(1) : '0.0'}%`,
+      description: `${filteredApps.filter(app => (app.Rating || 0) >= 4.0).length.toLocaleString()} apps have a rating of 4.0 or higher.`,
+      colorClass: 'bg-green-500', // Corresponding to the original green
+    },
+    {
+      id: 'recently-updated',
+      label: 'Recently Updated (6mo)',
+      value: `${appsWithDates.length > 0 ? ((recentlyUpdated / appsWithDates.length) * 100).toFixed(1) : '0.0'}%`,
+      description: `${recentlyUpdated.toLocaleString()} apps have been updated in the last 6 months.`,
+      colorClass: 'bg-purple-500', // Corresponding to the original purple
+    },
+    {
+      id: 'apps-with-size',
+      label: 'Apps with Size Data',
+      value: `${totalApps > 0 ? ((appsWithSize.length / totalApps) * 100).toFixed(1) : '0.0'}%`,
+      description: `${appsWithSize.length.toLocaleString()} apps provide specific size information.`,
+      colorClass: 'bg-orange-500', // Corresponding to the original orange
+    },
+  ];
+
 
   return (
     <div className="p-6 space-y-8">
@@ -136,17 +170,17 @@ const ComprehensiveReportPage: React.FC = () => {
             color="orange"
           />
         </div>
-        
+
         <div className="prose max-w-none text-gray-700">
           <p className="text-lg leading-relaxed">
-            This comprehensive analysis covers <strong>{totalApps.toLocaleString()} applications</strong> from the Google Play Store, 
-            representing <strong>{categories.length} distinct categories</strong>. The dataset includes 
+            This comprehensive analysis covers <strong>{totalApps.toLocaleString()} applications</strong> from the Google Play Store,
+            representing <strong>{categories.length} distinct categories</strong>. The dataset includes
             <strong> {totalReviews.toLocaleString()} user reviews</strong> providing deep insights into user sentiment and app performance.
           </p>
           <p className="mt-4">
-            Key findings show that <strong>{((freeApps / totalApps) * 100).toFixed(1)}% of apps are free</strong>, 
-            with an overall market average rating of <strong>{averageRating.toFixed(2)} stars</strong>. 
-            The most popular category is <strong>{categoryData[0]?.name}</strong> with {categoryData[0]?.value} apps.
+            Key findings show that <strong>{totalApps > 0 ? ((freeApps / totalApps) * 100).toFixed(1) : '0.0'}% of apps are free</strong>,
+            with an overall market average rating of <strong>{averageRating.toFixed(2)} stars</strong>.
+            The most popular category is <strong>{categoryData[0]?.name || 'N/A'}</strong> with {categoryData[0]?.value || 'N/A'} apps.
           </p>
         </div>
       </div>
@@ -179,7 +213,7 @@ const ComprehensiveReportPage: React.FC = () => {
       {/* Performance Analysis */}
       <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Performance Analysis</h2>
-        
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Install Distribution</h3>
@@ -212,14 +246,14 @@ const ComprehensiveReportPage: React.FC = () => {
                     <p className="text-sm text-gray-600">{app.Category}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-green-600">{app.Rating.toFixed(1)} ⭐</p>
-                    <p className="text-xs text-gray-500">{app.Reviews.toLocaleString()} reviews</p>
+                    <p className="font-bold text-green-600">{app.Rating?.toFixed(1) || 'N/A'} ⭐</p>
+                    <p className="text-xs text-gray-500">{app.Reviews?.toLocaleString() || 'N/A'} reviews</p>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-          
+
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Most Installed Apps</h3>
             <div className="space-y-3">
@@ -231,7 +265,7 @@ const ComprehensiveReportPage: React.FC = () => {
                   </div>
                   <div className="text-right">
                     <p className="font-bold text-blue-600">{formatInstalls(parseInstalls(app.Installs || '0'))}</p>
-                    <p className="text-xs text-gray-500">{app.Rating.toFixed(1)} ⭐</p>
+                    <p className="text-xs text-gray-500">{app.Rating?.toFixed(1) || 'N/A'} ⭐</p>
                   </div>
                 </div>
               ))}
@@ -243,23 +277,23 @@ const ComprehensiveReportPage: React.FC = () => {
       {/* Sentiment Analysis */}
       <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">User Sentiment Analysis</h2>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatsCard
             title="Positive Reviews"
-            value={`${((positiveReviews / totalReviews) * 100).toFixed(1)}%`}
+            value={`${totalReviews > 0 ? ((positiveReviews / totalReviews) * 100).toFixed(1) : '0.0'}%`}
             icon={TrendingUp}
             color="green"
           />
           <StatsCard
             title="Negative Reviews"
-            value={`${((negativeReviews / totalReviews) * 100).toFixed(1)}%`}
+            value={`${totalReviews > 0 ? ((negativeReviews / totalReviews) * 100).toFixed(1) : '0.0'}%`}
             icon={BarChart3}
             color="red"
           />
           <StatsCard
             title="Neutral Reviews"
-            value={`${((neutralReviews / totalReviews) * 100).toFixed(1)}%`}
+            value={`${totalReviews > 0 ? ((neutralReviews / totalReviews) * 100).toFixed(1) : '0.0'}%`}
             icon={MessageSquare}
             color="blue"
           />
@@ -298,7 +332,7 @@ const ComprehensiveReportPage: React.FC = () => {
       {/* Market Insights */}
       <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Key Market Insights</h2>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Category Performance</h3>
@@ -316,50 +350,26 @@ const ComprehensiveReportPage: React.FC = () => {
               ))}
             </div>
           </div>
-          
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Market Statistics</h3>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-3 bg-blue-50 rounded-lg">
-                <span className="text-gray-700">Free vs Paid Apps</span>
-                <span className="font-bold text-blue-600">
-                  {((freeApps / totalApps) * 100).toFixed(1)}% Free
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
-                <span className="text-gray-700">Apps with 4+ Rating</span>
-                <span className="font-bold text-green-600">
-                  {((filteredApps.filter(app => app.Rating >= 4.0).length / totalApps) * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-purple-50 rounded-lg">
-                <span className="text-gray-700">Recently Updated (6mo)</span>
-                <span className="font-bold text-purple-600">
-                  {((recentlyUpdated / appsWithDates.length) * 100).toFixed(1)}%
-                </span>
-              </div>
-              <div className="flex justify-between items-center p-3 bg-orange-50 rounded-lg">
-                <span className="text-gray-700">Apps with Size Data</span>
-                <span className="font-bold text-orange-600">
-                  {((appsWithSize.length / totalApps) * 100).toFixed(1)}%
-                </span>
-              </div>
-            </div>
-          </div>
+
+          {/* Replaced 'Market Statistics' div with InsightsCard */}
+          <InsightsCard
+            title="Market Statistics" // Title for the card
+            insights={marketStatisticsInsights} // The prepared data array
+          />
         </div>
       </div>
 
-      {/* Recommendations */}
+      {/* Recommendations - Kept as is, but could also be converted to InsightsCard if desired */}
       <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Strategic Recommendations</h2>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">For App Developers</h3>
             <ul className="space-y-3 text-gray-700">
               <li className="flex items-start space-x-3">
                 <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
-                <span>Focus on the <strong>{categoryData[0]?.name}</strong> category which shows highest market demand</span>
+                <span>Focus on the <strong>{categoryData[0]?.name || 'N/A'}</strong> category which shows highest market demand</span>
               </li>
               <li className="flex items-start space-x-3">
                 <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
@@ -367,15 +377,15 @@ const ComprehensiveReportPage: React.FC = () => {
               </li>
               <li className="flex items-start space-x-3">
                 <div className="w-2 h-2 bg-purple-500 rounded-full mt-2"></div>
-                <span>Regular updates are crucial - {((recentlyUpdated / appsWithDates.length) * 100).toFixed(1)}% of apps updated recently</span>
+                <span>Regular updates are crucial - {appsWithDates.length > 0 ? ((recentlyUpdated / appsWithDates.length) * 100).toFixed(1) : '0.0'}% of apps updated recently</span>
               </li>
               <li className="flex items-start space-x-3">
                 <div className="w-2 h-2 bg-orange-500 rounded-full mt-2"></div>
-                <span>Consider freemium model - {((freeApps / totalApps) * 100).toFixed(1)}% of successful apps are free</span>
+                <span>Consider freemium model - {totalApps > 0 ? ((freeApps / totalApps) * 100).toFixed(1) : '0.0'}% of successful apps are free</span>
               </li>
             </ul>
           </div>
-          
+
           <div>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Market Opportunities</h3>
             <ul className="space-y-3 text-gray-700">
@@ -385,11 +395,11 @@ const ComprehensiveReportPage: React.FC = () => {
               </li>
               <li className="flex items-start space-x-3">
                 <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2"></div>
-                <span>Improve user sentiment - {((positiveReviews / totalReviews) * 100).toFixed(1)}% positive reviews market-wide</span>
+                <span>Improve user sentiment - {totalReviews > 0 ? ((positiveReviews / totalReviews) * 100).toFixed(1) : '0.0'}% positive reviews market-wide</span>
               </li>
               <li className="flex items-start space-x-3">
                 <div className="w-2 h-2 bg-indigo-500 rounded-full mt-2"></div>
-                <span>Focus on {contentRatingData[0]?.name} content rating for broader reach</span>
+                <span>Focus on {contentRatingData[0]?.name || 'N/A'} content rating for broader reach</span>
               </li>
               <li className="flex items-start space-x-3">
                 <div className="w-2 h-2 bg-pink-500 rounded-full mt-2"></div>
@@ -403,8 +413,8 @@ const ComprehensiveReportPage: React.FC = () => {
       {/* Footer */}
       <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 text-center">
         <p className="text-gray-600">
-          Report generated on {new Date().toLocaleDateString()} • 
-          Data includes {totalApps.toLocaleString()} apps and {totalReviews.toLocaleString()} reviews • 
+          Report generated on {new Date().toLocaleDateString()} •
+          Data includes {totalApps.toLocaleString()} apps and {totalReviews.toLocaleString()} reviews •
           Analysis covers {categories.length} categories
         </p>
         <p className="text-sm text-gray-500 mt-2">
