@@ -4,7 +4,7 @@ import { Filter, ChevronDown, ChevronUp } from 'lucide-react';
 
 const SidebarFilters: React.FC = () => {
   const { apps, filters, setFilters } = useData();
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false); // Changed to false for initial collapsed state
 
   const categories = apps ? [...new Set(apps.map(app => app.Category))].sort() : [];
   const contentRatings = apps ? [...new Set(apps.map(app => app['Content Rating']))].sort() : [];
@@ -54,13 +54,18 @@ const SidebarFilters: React.FC = () => {
   };
 
   return (
-    // !!! IMPORTANT CHANGE HERE !!!
-    // Added max-h-[calc(100vh-Ypx)] and overflow-y-auto to the main container
-    // 'Ypx' should be the combined height of your header/navbar (if any) and any top/bottom padding/margins
-    // that exist outside this sidebar component. For example, if you have a 64px header, use 'calc(100vh-64px)'.
-    // I'm using 64px as a common header height placeholder. Adjust this value for your specific layout.
-    <div className="py-4 px-4 bg-gray-50 border-t border-gray-100
-                    max-h-[calc(100vh-64px)] overflow-y-auto custom-scrollbar">
+    // The main container will now always have `overflow-y-auto` when content exceeds its height.
+    // The `max-h` will control the *visible* height, and if content overflows, it will scroll.
+    <div
+      className={`
+        py-4 px-4 bg-gray-50 border-t border-gray-100
+        transition-all duration-300 ease-in-out
+        overflow-y-auto custom-scrollbar
+        ${isExpanded ? 'max-h-[calc(100vh-64px)]' : 'max-h-64'}
+      `}
+      // Remember to adjust 'max-h-64' for your desired initial collapsed height
+      // and '64px' in 'calc(100vh-64px)' for your actual header/navbar height.
+    >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center space-x-2">
           <Filter className="w-4 h-4 text-gray-500" />
@@ -81,7 +86,7 @@ const SidebarFilters: React.FC = () => {
       </div>
 
       {isExpanded && (
-        <div className="space-y-4 text-sm">
+        <div className="space-y-4 text-sm"> {/* Removed h-full and overflow-y-auto here */}
           {/* Rating Range */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-2">
@@ -208,7 +213,7 @@ const SidebarFilters: React.FC = () => {
           <button
             onClick={clearAllFilters}
             className="w-full px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-lg
-                        hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
+                       hover:bg-red-200 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500"
           >
             Clear All Filters
           </button>
