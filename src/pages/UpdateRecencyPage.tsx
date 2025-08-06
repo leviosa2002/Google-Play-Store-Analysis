@@ -8,7 +8,7 @@ import InsightsCard from '../components/InsightsCard';
 import { Calendar, Clock, TrendingUp, AlertTriangle, MessageSquare, ThumbsUp } from 'lucide-react';
 import { parseInstalls, formatInstalls } from '../utils/dataTransformers';
 
-// --- START: Added Interfaces for better type safety ---
+// --- START: Interfaces ---
 interface AppData {
   App: string;
   Category: string;
@@ -17,6 +17,16 @@ interface AppData {
   Installs: string;
   'Last Updated': string;
   Size: string;
+}
+
+interface ParsedAppData {
+  App: string;
+  Category: string;
+  Rating: number;
+  Reviews: number;
+  Installs: number;
+  'Last Updated': Date;
+  'Size': string;
 }
 
 interface CategoryUpdateAnalysis {
@@ -30,16 +40,38 @@ interface CategoryUpdateAnalysis {
 interface AppUpdateDetail {
   App: string;
   Category: string;
-  Rating: number | null;
+  Rating: number;
   Reviews: number;
   Installs: string;
-  'Last Updated': string;
+  'Last Updated': Date;
   'Days Since Update': number;
 }
-// --- END: Added Interfaces ---
+// --- END: Interfaces ---
+
+// --- A helper function to robustly parse the date string format from the CSV ---
+const parseDate = (dateString: string): Date | null => {
+  const parts = dateString.split(/[\s,]+/);
+  if (parts.length < 3) return null;
+  const month = parts[0];
+  const day = parseInt(parts[1], 10);
+  const year = parseInt(parts[2], 10);
+
+  const monthMap: { [key: string]: number } = {
+    'January': 0, 'February': 1, 'March': 2, 'April': 3,
+    'May': 4, 'June': 5, 'July': 6, 'August': 7,
+    'September': 8, 'October': 9, 'November': 10, 'December': 11
+  };
+
+  const monthIndex = monthMap[month];
+  if (monthIndex === undefined || isNaN(day) || isNaN(year)) {
+    return null;
+  }
+
+  const date = new Date(Date.UTC(year, monthIndex, day));
+  return date;
+};
 
 const UpdateRecencyPage: React.FC = () => {
-  // --- ALL HOOKS MUST BE DECLARED AT THE TOP LEVEL, UNCONDITIONALLY ---
   const { filteredApps, loading } = useData();
 
   // State for table controls
@@ -50,119 +82,77 @@ const UpdateRecencyPage: React.FC = () => {
   const [sortByStaleApp, setSortByStaleApp] = useState<string>('Days Since Update');
   const [sortOrderStaleApp, setSortOrderStaleApp] = useState<'asc' | 'desc'>('desc');
 
-  // Memoized date calculations
-  const now = useMemo(() => new Date(), []);
-  const oneMonthAgo = useMemo(() => new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()), [now]);
-  const threeMonthsAgo = useMemo(() => new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()), [now]);
-  const sixMonthsAgo = useMemo(() => new Date(now.getFullYear(), now.getMonth() - 6, now.getDate()), [now]);
-  const oneYearAgo = useMemo(() => new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()), [now]);
-  const twoYearsAgo = useMemo(() => new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()), [now]);
+  // --- MODIFIED: Use a specific date from 2018 for calculation purposes ---
+  const now = useMemo(() => new Date('2018-08-30'), []);
+  const dateRanges = useMemo(() => {
+    return {
+      oneMonthAgo: new Date(now.getFullYear(), now.getMonth() - 1, now.getDate()),
+      threeMonthsAgo: new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()),
+      sixMonthsAgo: new Date(now.getFullYear(), now.getMonth() - 6, now.getDate()),
+      oneYearAgo: new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()),
+      twoYearsAgo: new Date(now.getFullYear() - 2, now.getMonth(), now.getDate()),
+    };
+  }, [now]);
 
-  // Filter apps with valid dates (this depends on `filteredApps` which comes from `useData`)
-  const appsWithDates = useMemo(() => {
-    return filteredApps.filter((app: AppData) => {
-      const date = new Date(app['Last Updated']);
-      return !isNaN(date.getTime()) && date.getFullYear() >= 2010;
-    });
+  const parsedApps = useMemo(() => {
+    return filteredApps
+      .filter(app => {
+        const date = parseDate(app['Last Updated']);
+        return date !== null && date.getFullYear() >= 2010 && app.Rating !== null;
+      })
+      .map(app => ({
+        App: app.App,
+        Category: app.Category,
+        Rating: app.Rating || 0,
+        Reviews: app.Reviews,
+        Installs: parseInstalls(app.Installs || '0'),
+        'Last Updated': parseDate(app['Last Updated']) as Date,
+        Size: app.Size,
+      }));
   }, [filteredApps]);
 
-  // Categorize apps by update recency
-  const updateRecencyCategories = useMemo(() => [
-    { name: 'Last Month', apps: appsWithDates.filter(app => new Date(app['Last Updated']) >= oneMonthAgo) },
-    { name: 'Last 3 Months', apps: appsWithDates.filter(app => { const date = new Date(app['Last Updated']); return date >= threeMonthsAgo && date < oneMonthAgo; }) },
-    { name: 'Last 6 Months', apps: appsWithDates.filter(app => { const date = new Date(app['Last Updated']); return date >= sixMonthsAgo && date < threeMonthsAgo; }) },
-    { name: 'Last Year', apps: appsWithDates.filter(app => { const date = new Date(app['Last Updated']); return date >= oneYearAgo && date < sixMonthsAgo; }) },
-    { name: '1-2 Years Ago', apps: appsWithDates.filter(app => { const date = new Date(app['Last Updated']); return date >= twoYearsAgo && date < oneYearAgo; }) },
-    { name: '2+ Years Ago', apps: appsWithDates.filter(app => new Date(app['Last Updated']) < twoYearsAgo) }
-  ], [appsWithDates, oneMonthAgo, threeMonthsAgo, sixMonthsAgo, oneYearAgo, twoYearsAgo]);
+  const {
+    recencyDistribution,
+    rawCategoryUpdateAnalysis,
+    rawRecentlyUpdatedGoodApps,
+    rawStaleButGoodApps,
+    monthlyTrends,
+  } = useMemo(() => {
+    const updateRecencyCategories = [
+      { name: 'Last Month', apps: parsedApps.filter(app => app['Last Updated'] >= dateRanges.oneMonthAgo) },
+      { name: 'Last 3 Months', apps: parsedApps.filter(app => app['Last Updated'] >= dateRanges.threeMonthsAgo && app['Last Updated'] < dateRanges.oneMonthAgo) },
+      { name: 'Last 6 Months', apps: parsedApps.filter(app => app['Last Updated'] >= dateRanges.sixMonthsAgo && app['Last Updated'] < dateRanges.threeMonthsAgo) },
+      { name: 'Last Year', apps: parsedApps.filter(app => app['Last Updated'] >= dateRanges.oneYearAgo && app['Last Updated'] < dateRanges.sixMonthsAgo) },
+      { name: '1-2 Years Ago', apps: parsedApps.filter(app => app['Last Updated'] >= dateRanges.twoYearsAgo && app['Last Updated'] < dateRanges.oneYearAgo) },
+      { name: '2+ Years Ago', apps: parsedApps.filter(app => app['Last Updated'] < dateRanges.twoYearsAgo) }
+    ];
 
-  const recencyDistribution = useMemo(() => {
-    return updateRecencyCategories.map(category => ({
+    const recencyDistribution = updateRecencyCategories.map(category => ({
       name: category.name,
       value: category.apps.length
     }));
-  }, [updateRecencyCategories]);
 
-  // Raw and Sorted Stale But Good Apps
-  const rawStaleButGoodApps = useMemo(() => {
-    return appsWithDates
-      .filter((app: AppData) => {
-        const date = new Date(app['Last Updated']);
-        return date < oneYearAgo && app.Rating >= 4.0 && app.Reviews >= 100;
-      })
-      .map((app: AppData) => ({
-        App: app.App,
-        Category: app.Category,
-        Rating: app.Rating,
-        Reviews: app.Reviews,
-        Installs: formatInstalls(parseInstalls(app.Installs || '0')),
-        'Last Updated': app['Last Updated'],
-        'Days Since Update': Math.floor((now.getTime() - new Date(app['Last Updated']).getTime()) / (1000 * 60 * 60 * 24))
+    const rawStaleButGoodApps = parsedApps
+      .filter(app => app['Last Updated'] < dateRanges.oneYearAgo && app.Rating >= 4.0 && app.Reviews >= 100)
+      .map(app => ({
+        ...app,
+        Installs: formatInstalls(app.Installs),
+        'Days Since Update': Math.floor((now.getTime() - app['Last Updated'].getTime()) / (1000 * 60 * 60 * 24))
       }));
-  }, [appsWithDates, oneYearAgo, now]);
 
-  const sortedStaleButGoodApps = useMemo(() => {
-    return [...rawStaleButGoodApps].sort((a, b) => {
-      let valA: any = a[sortByStaleApp as keyof AppUpdateDetail];
-      let valB: any = b[sortByStaleApp as keyof AppUpdateDetail];
-
-      if (valA === null || typeof valA === 'undefined') valA = (sortOrderStaleApp === 'asc' ? -Infinity : Infinity);
-      if (valB === null || typeof valB === 'undefined') valB = (sortOrderStaleApp === 'asc' ? -Infinity : Infinity);
-
-      if (sortOrderStaleApp === 'asc') {
-        return valA - valB;
-      } else {
-        return valB - valA;
-      }
-    }).slice(0, 30);
-  }, [rawStaleButGoodApps, sortByStaleApp, sortOrderStaleApp]);
-
-  // Raw and Sorted Recently Updated High-Performing Apps
-  const rawRecentlyUpdatedGoodApps = useMemo(() => {
-    return appsWithDates
-      .filter((app: AppData) => {
-        const date = new Date(app['Last Updated']);
-        return date >= sixMonthsAgo && app.Rating >= 4.5 && app.Reviews >= 1000;
-      })
-      .map((app: AppData) => ({
-        App: app.App,
-        Category: app.Category,
-        Rating: app.Rating,
-        Reviews: app.Reviews,
-        Installs: formatInstalls(parseInstalls(app.Installs || '0')),
-        'Last Updated': app['Last Updated'],
-        'Days Since Update': Math.floor((now.getTime() - new Date(app['Last Updated']).getTime()) / (1000 * 60 * 60 * 24))
+    const rawRecentlyUpdatedGoodApps = parsedApps
+      .filter(app => app['Last Updated'] >= dateRanges.sixMonthsAgo && app.Rating >= 4.5 && app.Reviews >= 1000)
+      .map(app => ({
+        ...app,
+        Installs: formatInstalls(app.Installs),
+        'Days Since Update': Math.floor((now.getTime() - app['Last Updated'].getTime()) / (1000 * 60 * 60 * 24))
       }));
-  }, [appsWithDates, sixMonthsAgo, now]);
 
-  const sortedRecentlyUpdatedGoodApps = useMemo(() => {
-    return [...rawRecentlyUpdatedGoodApps].sort((a, b) => {
-      let valA: any = a[sortByRecentApp as keyof AppUpdateDetail];
-      let valB: any = b[sortByRecentApp as keyof AppUpdateDetail];
-
-      if (valA === null || typeof valA === 'undefined') valA = (sortOrderRecentApp === 'asc' ? -Infinity : Infinity);
-      if (valB === null || typeof valB === 'undefined') valB = (sortOrderRecentApp === 'asc' ? -Infinity : Infinity);
-
-      if (sortByRecentApp === 'Last Updated') {
-        valA = new Date(valA).getTime();
-        valB = new Date(valB).getTime();
-      }
-
-      if (sortOrderRecentApp === 'asc') {
-        return valA - valB;
-      } else {
-        return valB - valA;
-      }
-    }).slice(0, 30);
-  }, [rawRecentlyUpdatedGoodApps, sortByRecentApp, sortOrderRecentApp]);
-
-  // Raw and Sorted Category Update Analysis
-  const rawCategoryUpdateAnalysis = useMemo(() => {
-    return [...new Set(filteredApps.map((app: AppData) => app.Category))].map(category => {
-      const categoryApps = appsWithDates.filter((app: AppData) => app.Category === category);
-      const recentlyUpdatedCount = categoryApps.filter(app => new Date(app['Last Updated']) >= sixMonthsAgo).length;
+    const rawCategoryUpdateAnalysis = [...new Set(parsedApps.map(app => app.Category))].map(category => {
+      const categoryApps = parsedApps.filter(app => app.Category === category);
+      const recentlyUpdatedCount = categoryApps.filter(app => app['Last Updated'] >= dateRanges.sixMonthsAgo).length;
       const updateRate = categoryApps.length > 0 ? (recentlyUpdatedCount / categoryApps.length) * 100 : 0;
-      const avgRating = categoryApps.reduce((sum, app) => sum + (app.Rating || 0), 0) / categoryApps.length;
+      const avgRating = categoryApps.reduce((sum, app) => sum + app.Rating, 0) / categoryApps.length;
 
       return {
         Category: category,
@@ -172,49 +162,66 @@ const UpdateRecencyPage: React.FC = () => {
         'Avg Rating': Number(avgRating.toFixed(2))
       };
     });
-  }, [filteredApps, appsWithDates, sixMonthsAgo]);
 
-  const sortedCategoryUpdateAnalysis = useMemo(() => {
-    return [...rawCategoryUpdateAnalysis].sort((a, b) => {
-      let valA: any = a[sortByCategoryUpdate as keyof CategoryUpdateAnalysis];
-      let valB: any = b[sortByCategoryUpdate as keyof CategoryUpdateAnalysis];
+    const monthlyTrends = (() => {
+      const trends = [];
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
 
-      if (valA === null || typeof valA === 'undefined') valA = (sortOrderCategoryUpdate === 'asc' ? -Infinity : Infinity);
-      if (valB === null || typeof valB === 'undefined') valB = (sortOrderCategoryUpdate === 'asc' ? -Infinity : Infinity);
+      for (let i = 11; i >= 0; i--) {
+        const monthDate = new Date(currentYear, currentMonth - i, 1);
+        const nextMonth = new Date(currentYear, currentMonth - i + 1, 1);
+        const monthApps = parsedApps.filter(app => app['Last Updated'] >= monthDate && app['Last Updated'] < nextMonth);
 
-      if (sortOrderCategoryUpdate === 'asc') {
-        return valA - valB;
-      } else {
-        return valB - valA;
+        trends.push({
+          name: monthDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short' }),
+          value: monthApps.length
+        });
       }
-    }).slice(0, 20);
-  }, [rawCategoryUpdateAnalysis, sortByCategoryUpdate, sortOrderCategoryUpdate]);
+      return trends;
+    })();
 
-  // Monthly update trends (last 12 months)
-  const monthlyTrends = useMemo(() => {
-    const trends = [];
-    for (let i = 11; i >= 0; i--) {
-      const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const nextMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-      const monthApps = appsWithDates.filter(app => {
-        const appDate = new Date(app['Last Updated']);
-        return appDate >= monthDate && appDate < nextMonth;
-      });
+    return {
+      recencyDistribution,
+      rawCategoryUpdateAnalysis,
+      rawRecentlyUpdatedGoodApps,
+      rawStaleButGoodApps,
+      monthlyTrends
+    };
+  }, [parsedApps, now, dateRanges]);
 
-      trends.push({
-        name: monthDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short' }),
-        value: monthApps.length
-      });
-    }
-    return trends;
-  }, [appsWithDates, now]);
+  // Reusable sorting function
+  const getSortValue = (item: any, key: string) => {
+    const value = item[key];
+    if (value instanceof Date) return value.getTime();
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') return value.toLowerCase();
+    return value;
+  };
+
+  const getSortedData = (data: any[], sortBy: string, sortOrder: 'asc' | 'desc') => {
+    return [...data].sort((a, b) => {
+      const valA = getSortValue(a, sortBy);
+      const valB = getSortValue(b, sortBy);
+      if (sortOrder === 'asc') {
+        return valA < valB ? -1 : 1;
+      } else {
+        return valA > valB ? -1 : 1;
+      }
+    });
+  };
+
+  const sortedCategoryUpdateAnalysis = useMemo(() => getSortedData(rawCategoryUpdateAnalysis, sortByCategoryUpdate, sortOrderCategoryUpdate).slice(0, 20), [rawCategoryUpdateAnalysis, sortByCategoryUpdate, sortOrderCategoryUpdate]);
+  const sortedStaleButGoodApps = useMemo(() => getSortedData(rawStaleButGoodApps, sortByStaleApp, sortOrderStaleApp).slice(0, 30), [rawStaleButGoodApps, sortByStaleApp, sortOrderStaleApp]);
+  const sortedRecentlyUpdatedGoodApps = useMemo(() => getSortedData(rawRecentlyUpdatedGoodApps, sortByRecentApp, sortOrderRecentApp).slice(0, 30), [rawRecentlyUpdatedGoodApps, sortByRecentApp, sortOrderRecentApp]);
 
 
   // Statistics
-  const totalAppsWithDates = appsWithDates.length;
-  const recentlyUpdated = updateRecencyCategories[0].apps.length + updateRecencyCategories[1].apps.length;
-  const staleApps = updateRecencyCategories[4].apps.length + updateRecencyCategories[5].apps.length;
+  const totalAppsWithDates = parsedApps.length;
+  const recentlyUpdated = recencyDistribution[0]?.value + recencyDistribution[1]?.value || 0;
+  const staleApps = recencyDistribution[4]?.value + recencyDistribution[5]?.value || 0;
   const updateRate = totalAppsWithDates > 0 ? (recentlyUpdated / totalAppsWithDates) * 100 : 0;
+
 
   // Data for the InsightsCard component
   const recencyInsightsData = useMemo(() => [
@@ -253,20 +260,20 @@ const UpdateRecencyPage: React.FC = () => {
     {
       id: 'stale-but-good',
       label: 'High-Quality but Stale Apps',
-      value: sortedStaleButGoodApps.length.toLocaleString(),
-      description: `${sortedStaleButGoodApps.length.toLocaleString()} highly-rated apps (${sortedStaleButGoodApps.length > 0 ? sortedStaleButGoodApps[0].Rating?.toFixed(1) : 'N/A'}+ avg) have not been updated recently.`,
+      value: rawStaleButGoodApps.length.toLocaleString(),
+      description: `${rawStaleButGoodApps.length.toLocaleString()} highly-rated apps (${rawStaleButGoodApps.length > 0 ? rawStaleButGoodApps[0].Rating?.toFixed(1) : 'N/A'}+ avg) have not been updated recently.`,
       colorClass: 'bg-amber-500',
       icon: ThumbsUp,
     },
     {
       id: 'recently-updated-high-performing',
       label: 'Top Performing Recent Updates',
-      value: sortedRecentlyUpdatedGoodApps.length.toLocaleString(),
-      description: `${sortedRecentlyUpdatedGoodApps.length.toLocaleString()} apps with 4.5+ rating updated recently, showing strong developer engagement.`,
+      value: rawRecentlyUpdatedGoodApps.length.toLocaleString(),
+      description: `${rawRecentlyUpdatedGoodApps.length.toLocaleString()} apps with 4.5+ rating updated recently, showing strong developer engagement.`,
       colorClass: 'bg-rose-500',
       icon: MessageSquare,
     },
-  ], [totalAppsWithDates, updateRate, staleApps, sortedCategoryUpdateAnalysis, sortedStaleButGoodApps, sortedRecentlyUpdatedGoodApps]);
+  ], [totalAppsWithDates, updateRate, staleApps, sortedCategoryUpdateAnalysis, rawStaleButGoodApps, rawRecentlyUpdatedGoodApps]);
 
 
   // --- START: Common Render Cell Functions for DataTables ---
@@ -304,8 +311,8 @@ const UpdateRecencyPage: React.FC = () => {
     <span className="font-mono text-gray-800">{item.Installs}</span>
   );
 
-  const lastUpdatedRenderCell = (item: { 'Last Updated': string }) => (
-    <span className="text-sm text-gray-700">{item['Last Updated']}</span>
+  const lastUpdatedRenderCell = (item: { 'Last Updated': Date }) => (
+    <span className="text-sm text-gray-700">{item['Last Updated'].toLocaleDateString()}</span>
   );
 
   const reviewsRenderCell = (item: { Reviews: number }) => (
@@ -422,7 +429,7 @@ const UpdateRecencyPage: React.FC = () => {
         />
       </div>
 
-      {/* !!! START: Modified Category Update Analysis Table Section for consistent UX !!! */}
+      {/* Category Update Analysis Table Section */}
       <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
         <div className="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
           <h3 className="text-xl font-semibold text-gray-900">
@@ -451,20 +458,18 @@ const UpdateRecencyPage: React.FC = () => {
           data={sortedCategoryUpdateAnalysis}
           columns={categoryUpdateAnalysisColumns}
           title=""
-          // Title handled by external h3
-          pageSize={10} // Adjusted pageSize for better view
+          pageSize={10}
           showPagination={true}
-          enableSorting={false} // External sorting
+          enableSorting={false}
           initialSortBy={sortByCategoryUpdate}
           initialSortDirection={sortOrderCategoryUpdate}
           showRankColumn={true}
         />
       </div>
-      {/* !!! END: Modified Category Update Analysis Table Section !!! */}
 
       {/* App Tables */}
       <div className="grid grid-cols-1 gap-6">
-        {/* !!! START: Modified Recently Updated High-Performing Apps Table Section !!! */}
+        {/* Recently Updated High-Performing Apps Table Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
           <div className="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
             <h3 className="text-xl font-semibold text-gray-900">
@@ -501,9 +506,8 @@ const UpdateRecencyPage: React.FC = () => {
             showRankColumn={true}
           />
         </div>
-        {/* !!! END: Modified Recently Updated High-Performing Apps Table Section !!! */}
 
-        {/* !!! START: Modified Stale but High-Quality Apps Table Section !!! */}
+        {/* Stale but High-Quality Apps Table Section */}
         <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
           <div className="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
             <h3 className="text-xl font-semibold text-gray-900">
@@ -540,7 +544,6 @@ const UpdateRecencyPage: React.FC = () => {
             showRankColumn={true}
           />
         </div>
-        {/* !!! END: Modified Stale but High-Quality Apps Table Section !!! */}
       </div>
 
       {/* Insights - Now using InsightsCard component */}

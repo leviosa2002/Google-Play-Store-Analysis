@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import BarChartComponent from '../components/charts/BarChart';
 import DataTable from '../components/DataTable';
@@ -43,168 +43,158 @@ interface CategorySentiment {
 
 
 const TopReviewsPage: React.FC = () => {
-  const { filteredApps, filteredReviews, loading } = useData();
+  const { filteredApps, filteredReviews, loading: dataContextLoading } = useData();
   const [selectedSentiment, setSelectedSentiment] = useState<string>('All');
 
-  // --- START: State for table controls (NEW) ---
-  // For 'Apps with Most Reviews' table
+  // --- NEW: Local loading state and data state to prevent blocking the UI ---
+  const [localIsLoading, setLocalIsLoading] = useState(true);
+  const [pageData, setPageData] = useState<any>(null);
+
+  // --- START: State for table controls ---
   const [sortByAppAnalysis, setSortByAppAnalysis] = useState<string>('Review Count');
   const [sortOrderAppAnalysis, setSortOrderAppAnalysis] = useState<'asc' | 'desc'>('desc');
-
-  // For 'Top Positive Reviews' and 'Top Negative Reviews' tables
-  const [sortByReview, setSortByReview] = useState<string>('Polarity'); // Default for reviews
-  const [sortOrderReview, setSortOrderReview] = useState<'asc' | 'desc'>('desc'); // Default for reviews (desc for positive, asc for negative)
+  const [sortByReview, setSortByReview] = useState<string>('Polarity');
+  const [sortOrderReview, setSortOrderReview] = useState<'asc' | 'desc'>('desc');
   // --- END: State for table controls ---
 
+  // --- NEW: useEffect to handle heavy data processing asynchronously ---
+  useEffect(() => {
+    if (filteredApps && filteredReviews && !dataContextLoading) {
+      setLocalIsLoading(true);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+      setTimeout(() => {
+        // Filter reviews based on selected sentiment
+        const reviewsToShow = selectedSentiment === 'All'
+          ? filteredReviews
+          : filteredReviews.filter(review => review.Sentiment === selectedSentiment);
 
-  // Filter reviews based on selected sentiment
-  const reviewsToShow = useMemo(() => {
-    return selectedSentiment === 'All'
-      ? filteredReviews
-      : filteredReviews.filter(review => review.Sentiment === selectedSentiment);
-  }, [selectedSentiment, filteredReviews]);
+        // Top positive reviews (highest polarity)
+        const rawTopPositiveReviews = filteredReviews
+          .filter(review => review.Sentiment === 'Positive' && (review.Sentiment_Polarity || 0) > 0.5)
+          .map(review => ({
+            App: review.App,
+            Review: review.Translated_Review || 'No review text',
+            Sentiment: review.Sentiment,
+            Polarity: Number((review.Sentiment_Polarity || 0).toFixed(3)),
+            Subjectivity: Number((review.Sentiment_Subjectivity || 0).toFixed(3))
+          }));
 
-  // Top positive reviews (highest polarity)
-  const rawTopPositiveReviews = useMemo(() => {
-    return filteredReviews
-      .filter(review => review.Sentiment === 'Positive' && (review.Sentiment_Polarity || 0) > 0.5)
-      .map(review => ({
-        App: review.App,
-        Review: review.Translated_Review || 'No review text',
-        Sentiment: review.Sentiment,
-        Polarity: Number((review.Sentiment_Polarity || 0).toFixed(3)),
-        Subjectivity: Number((review.Sentiment_Subjectivity || 0).toFixed(3))
-      }));
-  }, [filteredReviews]);
+        // Top negative reviews (lowest polarity)
+        const rawTopNegativeReviews = filteredReviews
+          .filter(review => review.Sentiment === 'Negative' && (review.Sentiment_Polarity || 0) < -0.1)
+          .map(review => ({
+            App: review.App,
+            Review: review.Translated_Review || 'No review text',
+            Sentiment: review.Sentiment,
+            Polarity: Number((review.Sentiment_Polarity || 0).toFixed(3)),
+            Subjectivity: Number((review.Sentiment_Subjectivity || 0).toFixed(3))
+          }));
 
-  // Sort Top Positive Reviews
-  const sortedTopPositiveReviews = useMemo(() => {
-    return [...rawTopPositiveReviews].sort((a, b) => {
-      let valA: any = a[sortByReview as keyof typeof a];
-      let valB: any = b[sortByReview as keyof typeof b];
+        // Most reviewed apps with sentiment breakdown
+        const rawAppReviewAnalysis: AppReviewAnalysis[] = filteredApps.map((app: AppData) => {
+          const appReviews = filteredReviews.filter((review: ReviewData) => review.App === app.App);
+          if (appReviews.length === 0) return null;
 
-      if (valA === null || typeof valA === 'undefined') valA = (sortOrderReview === 'asc' ? -Infinity : Infinity);
-      if (valB === null || typeof valB === 'undefined') valB = (sortOrderReview === 'asc' ? -Infinity : Infinity);
+          const positiveCount = appReviews.filter(r => r.Sentiment === 'Positive').length;
+          const negativeCount = appReviews.filter(r => r.Sentiment === 'Negative').length;
+          const neutralCount = appReviews.filter(r => r.Sentiment === 'Neutral').length;
+          const avgPolarity = appReviews.reduce((sum, r) => sum + (r.Sentiment_Polarity || 0), 0) / appReviews.length;
 
-      if (sortOrderReview === 'asc') {
-        return valA - valB;
+          return {
+            App: app.App,
+            Category: app.Category,
+            Rating: app.Rating,
+            'Review Count': appReviews.length,
+            'Positive': positiveCount,
+            'Negative': negativeCount,
+            'Neutral': neutralCount,
+            'Avg Polarity': Number(avgPolarity.toFixed(3)),
+            'Positive %': Number(((positiveCount / appReviews.length) * 100).toFixed(1))
+          };
+        }).filter((app): app is AppReviewAnalysis => app !== null);
+
+        // Sentiment distribution by app category
+        const sentimentByCategory: CategorySentiment[] = [...new Set(filteredApps.map((app: AppData) => app.Category))].map(category => {
+          const categoryApps = filteredApps.filter((app: AppData) => app.Category === category);
+          const categoryReviews = filteredReviews.filter((review: ReviewData) =>
+            categoryApps.some(app => app.App === review.App)
+          );
+
+          if (categoryReviews.length === 0) return null;
+
+          const positiveCount = categoryReviews.filter(r => r.Sentiment === 'Positive').length;
+          const positivePercentage = (positiveCount / categoryReviews.length) * 100;
+
+          return {
+            name: category,
+            value: Number(positivePercentage.toFixed(1))
+          };
+        }).filter((cat): cat is CategorySentiment => cat !== null)
+          .sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 15);
+
+        // Statistics
+        const totalReviews = filteredReviews.length;
+        const positiveReviews = filteredReviews.filter(r => r.Sentiment === 'Positive').length;
+        const negativeReviews = filteredReviews.filter(r => r.Sentiment === 'Negative').length;
+        const neutralReviews = filteredReviews.filter(r => r.Sentiment === 'Neutral').length;
+        const avgPolarity = totalReviews > 0 ? filteredReviews.reduce((sum, r) => sum + (r.Sentiment_Polarity || 0), 0) / totalReviews : 0;
+
+        setPageData({
+          reviewsToShow,
+          rawTopPositiveReviews,
+          rawTopNegativeReviews,
+          rawAppReviewAnalysis,
+          sentimentByCategory,
+          totalReviews,
+          positiveReviews,
+          negativeReviews,
+          neutralReviews,
+          avgPolarity,
+        });
+        setLocalIsLoading(false);
+      }, 0); // The 0ms timeout ensures the loading state is updated before the heavy task starts
+    } else if (dataContextLoading) {
+      setLocalIsLoading(true);
+      setPageData(null);
+    }
+  }, [filteredApps, filteredReviews, dataContextLoading, selectedSentiment]);
+
+  // If pageData is not ready yet, provide empty defaults
+  const reviewsToShow = pageData?.reviewsToShow || [];
+  const rawTopPositiveReviews = pageData?.rawTopPositiveReviews || [];
+  const rawTopNegativeReviews = pageData?.rawTopNegativeReviews || [];
+  const rawAppReviewAnalysis = pageData?.rawAppReviewAnalysis || [];
+  const sentimentByCategory = pageData?.sentimentByCategory || [];
+  const totalReviews = pageData?.totalReviews || 0;
+  const positiveReviews = pageData?.positiveReviews || 0;
+  const negativeReviews = pageData?.negativeReviews || 0;
+  const avgPolarity = pageData?.avgPolarity || 0;
+
+  // Reusable sorting function
+  const getSortValue = (item: any, key: string) => {
+    const value = item[key];
+    if (value instanceof Date) return value.getTime();
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') return value.toLowerCase();
+    return value;
+  };
+
+  const getSortedData = (data: any[], sortBy: string, sortOrder: 'asc' | 'desc') => {
+    return [...data].sort((a, b) => {
+      const valA = getSortValue(a, sortBy);
+      const valB = getSortValue(b, sortBy);
+      if (sortOrder === 'asc') {
+        return valA < valB ? -1 : 1;
       } else {
-        return valB - valA;
+        return valA > valB ? -1 : 1;
       }
-    }).slice(0, 20); // Still slice to top 20 after sorting
-  }, [rawTopPositiveReviews, sortByReview, sortOrderReview]);
+    });
+  };
 
-
-  // Top negative reviews (lowest polarity)
-  const rawTopNegativeReviews = useMemo(() => {
-    return filteredReviews
-      .filter(review => review.Sentiment === 'Negative' && (review.Sentiment_Polarity || 0) < -0.1)
-      .map(review => ({
-        App: review.App,
-        Review: review.Translated_Review || 'No review text',
-        Sentiment: review.Sentiment,
-        Polarity: Number((review.Sentiment_Polarity || 0).toFixed(3)),
-        Subjectivity: Number((review.Sentiment_Subjectivity || 0).toFixed(3))
-      }));
-  }, [filteredReviews]);
-
-  // Sort Top Negative Reviews (note: sorting by Polarity asc for negative reviews to get 'most negative')
-  const sortedTopNegativeReviews = useMemo(() => {
-    return [...rawTopNegativeReviews].sort((a, b) => {
-      let valA: any = a[sortByReview as keyof typeof a];
-      let valB: any = b[sortByReview as keyof typeof b];
-
-      if (valA === null || typeof valA === 'undefined') valA = (sortOrderReview === 'asc' ? Infinity : -Infinity); // For negative, asc means more negative
-      if (valB === null || typeof valB === 'undefined') valB = (sortOrderReview === 'asc' ? Infinity : -Infinity);
-
-      if (sortOrderReview === 'asc') {
-        return valA - valB; // For negative, asc will bring lower (more negative) values first
-      } else {
-        return valB - valA;
-      }
-    }).slice(0, 20); // Still slice to top 20 after sorting
-  }, [rawTopNegativeReviews, sortByReview, sortOrderReview]);
-
-
-  // Most reviewed apps with sentiment breakdown
-  const rawAppReviewAnalysis: AppReviewAnalysis[] = useMemo(() => {
-    return filteredApps.map((app: AppData) => {
-      const appReviews = filteredReviews.filter((review: ReviewData) => review.App === app.App);
-      if (appReviews.length === 0) return null;
-
-      const positiveCount = appReviews.filter(r => r.Sentiment === 'Positive').length;
-      const negativeCount = appReviews.filter(r => r.Sentiment === 'Negative').length;
-      const neutralCount = appReviews.filter(r => r.Sentiment === 'Neutral').length;
-      const avgPolarity = appReviews.reduce((sum, r) => sum + (r.Sentiment_Polarity || 0), 0) / appReviews.length;
-
-      return {
-        App: app.App,
-        Category: app.Category,
-        Rating: app.Rating,
-        'Review Count': appReviews.length,
-        'Positive': positiveCount,
-        'Negative': negativeCount,
-        'Neutral': neutralCount,
-        'Avg Polarity': Number(avgPolarity.toFixed(3)),
-        'Positive %': Number(((positiveCount / appReviews.length) * 100).toFixed(1))
-      };
-    }).filter((app): app is AppReviewAnalysis => app !== null);
-  }, [filteredApps, filteredReviews]);
-
-  // Sort App Review Analysis
-  const sortedAppReviewAnalysis = useMemo(() => {
-    return [...rawAppReviewAnalysis].sort((a, b) => {
-      let valA: any = a[sortByAppAnalysis as keyof AppReviewAnalysis];
-      let valB: any = b[sortByAppAnalysis as keyof AppReviewAnalysis];
-
-      if (valA === null || typeof valA === 'undefined') valA = (sortOrderAppAnalysis === 'asc' ? -Infinity : Infinity);
-      if (valB === null || typeof valB === 'undefined') valB = (sortOrderAppAnalysis === 'asc' ? -Infinity : Infinity);
-
-      if (sortOrderAppAnalysis === 'asc') {
-        return valA - valB;
-      } else {
-        return valB - valA;
-      }
-    }).slice(0, 50); // Slice to top 50 after sorting
-  }, [rawAppReviewAnalysis, sortByAppAnalysis, sortOrderAppAnalysis]);
-
-
-  // Sentiment distribution by app category
-  const sentimentByCategory: CategorySentiment[] = useMemo(() => {
-    const categories = [...new Set(filteredApps.map((app: AppData) => app.Category))];
-    return categories.map(category => {
-      const categoryApps = filteredApps.filter((app: AppData) => app.Category === category);
-      const categoryReviews = filteredReviews.filter((review: ReviewData) =>
-        categoryApps.some(app => app.App === review.App)
-      );
-
-      if (categoryReviews.length === 0) return null;
-
-      const positiveCount = categoryReviews.filter(r => r.Sentiment === 'Positive').length;
-      const positivePercentage = (positiveCount / categoryReviews.length) * 100;
-
-      return {
-        name: category,
-        value: Number(positivePercentage.toFixed(1))
-      };
-    }).filter((cat): cat is CategorySentiment => cat !== null)
-      .sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 15);
-  }, [filteredApps, filteredReviews]);
-
-  // Statistics
-  const totalReviews = filteredReviews.length;
-  const positiveReviews = filteredReviews.filter(r => r.Sentiment === 'Positive').length;
-  const negativeReviews = filteredReviews.filter(r => r.Sentiment === 'Negative').length;
-  const neutralReviews = filteredReviews.filter(r => r.Sentiment === 'Neutral').length;
-  const avgPolarity = totalReviews > 0 ? filteredReviews.reduce((sum, r) => sum + (r.Sentiment_Polarity || 0), 0) / totalReviews : 0;
+  // Sort tables using the new helper
+  const sortedAppReviewAnalysis = useMemo(() => getSortedData(rawAppReviewAnalysis, sortByAppAnalysis, sortOrderAppAnalysis).slice(0, 50), [rawAppReviewAnalysis, sortByAppAnalysis, sortOrderAppAnalysis]);
+  const sortedTopPositiveReviews = useMemo(() => getSortedData(rawTopPositiveReviews, sortByReview, sortOrderReview).slice(0, 20), [rawTopPositiveReviews, sortByReview, sortOrderReview]);
+  const sortedTopNegativeReviews = useMemo(() => getSortedData(rawTopNegativeReviews, sortByReview, sortOrderReview).slice(0, 20), [rawTopNegativeReviews, sortByReview, sortOrderReview]);
 
   // Get most and least positive categories for insights, handling empty array
   const mostPositiveCategory = sentimentByCategory.length > 0 ? sentimentByCategory[0] : null;
@@ -272,7 +262,6 @@ const TopReviewsPage: React.FC = () => {
 
 
   // --- START: Common Render Cell Functions for DataTables ---
-  // Reusable App Name render cell
   const appNameCommonRenderCell = (item: { App: string; Category?: string }) => (
     <div className="flex items-center space-x-2">
       <div className="w-8 h-8 bg-gray-200 rounded-md flex items-center justify-center text-md text-gray-600">
@@ -289,12 +278,10 @@ const TopReviewsPage: React.FC = () => {
     </div>
   );
 
-  // Reusable Category render cell
   const categoryCommonRenderCell = (item: { Category: string }) => (
     <span className="text-gray-700 font-medium">{item.Category}</span>
   );
 
-  // Reusable Rating render cell
   const ratingCommonRenderCell = (item: { Rating: number | null }) => (
     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
       (item.Rating || 0) >= 4.0 ? 'bg-green-100 text-green-800' :
@@ -304,17 +291,15 @@ const TopReviewsPage: React.FC = () => {
       {item.Rating?.toFixed(1) || 'N/A'}
     </span>
   );
-
   // --- END: Common Render Cell Functions ---
 
 
-  // reviewColumns (UPDATED to use renderCell)
   const reviewColumns = useMemo(() => [
     { key: 'App', label: 'App', renderCell: appNameCommonRenderCell, textAlign: 'left' },
     {
       key: 'Review',
       label: 'Review Text',
-      sortable: false, // Review text is typically not sortable
+      sortable: false,
       renderCell: (item: { Review: string }) => (
         <div className="max-w-md">
           <p className="text-sm text-gray-900 line-clamp-3" title={item.Review}>
@@ -362,7 +347,6 @@ const TopReviewsPage: React.FC = () => {
     }
   ], []);
 
-  // appAnalysisColumns (UPDATED to use renderCell)
   const appAnalysisColumns = useMemo(() => [
     { key: 'App', label: 'App Name', renderCell: appNameCommonRenderCell, textAlign: 'left' },
     { key: 'Category', label: 'Category', renderCell: categoryCommonRenderCell, textAlign: 'left' },
@@ -419,6 +403,16 @@ const TopReviewsPage: React.FC = () => {
       textAlign: 'right'
     }
   ], []);
+
+
+  if (localIsLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600 mb-4"></div>
+        <p className="text-xl font-semibold text-gray-700">Loading data...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
@@ -489,7 +483,7 @@ const TopReviewsPage: React.FC = () => {
         />
       </div>
 
-      {/* !!! START: Modified App Review Analysis Table Section for consistent UX !!! */}
+      {/* App Review Analysis Table Section */}
       <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
         <div className="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
           <h3 className="text-xl font-semibold text-gray-900">
@@ -515,21 +509,19 @@ const TopReviewsPage: React.FC = () => {
           </div>
         </div>
         <DataTable
-          data={sortedAppReviewAnalysis} // Pass the full sorted list
+          data={sortedAppReviewAnalysis}
           columns={appAnalysisColumns}
-          title="" // Empty title as it's handled externally
+          title=""
           pageSize={15}
           showPagination={true}
-          enableSorting={false} // External sorting only
+          enableSorting={false}
           initialSortBy={sortByAppAnalysis}
           initialSortDirection={sortOrderAppAnalysis}
           showRankColumn={true}
         />
       </div>
-      {/* !!! END: Modified App Review Analysis Table Section !!! */}
 
-
-      {/* !!! START: Modified Top Reviews Tables Sections for consistent UX !!! */}
+      {/* Top Reviews Tables Sections */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm">
           <div className="flex flex-col sm:flex-row items-center justify-between mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
@@ -559,7 +551,7 @@ const TopReviewsPage: React.FC = () => {
             title=""
             pageSize={10}
             showPagination={true}
-            enableSorting={false} // External sorting only
+            enableSorting={false}
             initialSortBy={sortByReview}
             initialSortDirection={sortOrderReview}
             showRankColumn={true}
@@ -573,7 +565,7 @@ const TopReviewsPage: React.FC = () => {
             </h3>
             <div className="flex space-x-2">
               <select
-                value={sortByReview} // Using the same sort state for both review tables for simplicity
+                value={sortByReview}
                 onChange={(e) => setSortByReview(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
@@ -581,7 +573,6 @@ const TopReviewsPage: React.FC = () => {
                 <option value="Subjectivity">🔬 Subjectivity</option>
               </select>
               <button
-                // For negative reviews, 'asc' on polarity means more negative
                 onClick={() => setSortOrderReview(sortOrderReview === 'desc' ? 'asc' : 'desc')}
                 className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm"
               >
@@ -595,14 +586,13 @@ const TopReviewsPage: React.FC = () => {
             title=""
             pageSize={10}
             showPagination={true}
-            enableSorting={false} // External sorting only
+            enableSorting={false}
             initialSortBy={sortByReview}
             initialSortDirection={sortOrderReview}
             showRankColumn={true}
           />
         </div>
       </div>
-      {/* !!! END: Modified Top Reviews Tables Sections !!! */}
 
       {/* Insights - Now using InsightsCard component */}
       <InsightsCard
